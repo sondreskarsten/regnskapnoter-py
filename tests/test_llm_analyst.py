@@ -9,6 +9,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytest.importorskip(
+    "google.genai",
+    reason="examples/llm_analyst.py requires google-genai (install with [llm] extra)",
+)
+
 # Make the example importable
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 sys.path.insert(0, str(EXAMPLES_DIR))
