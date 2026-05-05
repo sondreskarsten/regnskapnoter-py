@@ -99,3 +99,36 @@ def test_unmatched_observation_emits_unmatched_row():
     )
     df = rn.build_annotations(raw, obs)
     assert (df["match_status"] == "unmatched").any()
+
+
+def test_page_markers_emit_fragment_selector():
+    raw = {
+        "orgnr": "123",
+        "year": 2024,
+        "notes": [
+            {
+                "note_number": "1",
+                "title": "Skatt",
+                "page_start": 5,
+                "page_end": 6,
+                "full_text": "[[p:5]]Resultat før skatt -873 527\n[[p:6]]Skattekostnad 1 100",
+            }
+        ],
+    }
+    obs = pd.DataFrame(
+        {
+            "orgnr": ["123", "123"],
+            "report_year": [2024, 2024],
+            "concept_id": ["regnskap-no:ResultatForSkatt", "regnskap-no:Skattekostnad"],
+            "value": [-873527, 1100],
+        }
+    )
+    df = rn.build_annotations(raw, obs, source_pdf_uri="gs://example/file.pdf")
+    pdf_rows = df[df["target_type"] == "pdf"]
+    assert len(pdf_rows) == 2
+    pages = pdf_rows["page"].tolist()
+    assert 5 in pages
+    assert 6 in pages
+    sel = json.loads(pdf_rows.iloc[0]["selector_json"])
+    assert sel["type"] == "FragmentSelector"
+    assert sel["value"].startswith("page=")

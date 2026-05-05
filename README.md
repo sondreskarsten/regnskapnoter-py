@@ -88,6 +88,54 @@ Export to WADM JSON-LD for Hypothes.is / INCEpTION import:
 jsonld_payload = rn.annotations_to_jsonld(annotations)
 ```
 
+
+## Hypothes.is integration (analyst review)
+
+Push annotations to a Hypothes.is group for analyst review (especially unmatched
+ones and proposed-concept additions); pull analyst contributions back as a DataFrame.
+
+```python
+import regnskapnoter as rn
+
+# 1) Push annotations
+posted = rn.to_hypothesis(
+    annotations,                              # output of build_annotations()
+    group_id="abc123",                        # Hypothes.is group ID
+    api_token="<token from hypothes.is/account/developer>",
+    source_url_template=lambda r: f"https://viewer.example.com/{r['body_concept_id']}",
+)
+
+# 2) Pull analyst contributions back
+contributions = rn.from_hypothesis(group_id="abc123", api_token="<token>")
+new_concepts  = rn.proposed_concepts(contributions)   # tag: proposed-concept
+needs_review  = rn.review_queue(contributions)        # tag: review-needed | review-wrong-concept
+```
+
+Analyst tags recognized:
+- `proposed-concept` → analyst proposes a new concept (feeds back to taxonomy maintainer)
+- `review-needed` → auto-attached to unmatched annotations; analyst can re-anchor
+- `review-wrong-concept` → analyst flags a misclassification
+
+Each pushed annotation carries `concept:<id>`, `value:<v>`, `note:<n>`, `page:<p>` tags
+so analysts can filter by framework / concept in the Hypothes.is UI.
+
+## PDF FragmentSelector emission
+
+When the raw JSON contains `[[p:N]]` page markers (added in `noter-extraction` per
+[the page-tracking patch](https://github.com/sondreskarsten/noter-extraction/commit/897d759)),
+PDF target annotations get a proper `FragmentSelector` with `page=N`:
+
+```json
+{
+  "type": "FragmentSelector",
+  "conformsTo": "http://tools.ietf.org/rfc/rfc3778",
+  "value": "page=5",
+  "refinedBy": {"type": "TextQuoteSelector", "exact": "1 100", "prefix": "...", "suffix": "..."}
+}
+```
+
+Falls back to `RangeSelector` when no page metadata is present (legacy raw JSON).
+
 ## Version pinning
 
 ```python

@@ -19,6 +19,15 @@ from regnskapnoter.frameworks import (
     frameworks,
     list_frameworks,
 )
+from regnskapnoter.hypothesis import (
+    PROPOSED_CONCEPT_TAG,
+    REVIEW_TAG,
+    WRONG_CONCEPT_TAG,
+    from_hypothesis,
+    proposed_concepts,
+    review_queue,
+    to_hypothesis,
+)
 from regnskapnoter.loader import (
     artifact_path,
     available_versions,
@@ -41,8 +50,11 @@ from regnskapnoter.tables import (
     references,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = [
+    "PROPOSED_CONCEPT_TAG",
+    "REVIEW_TAG",
+    "WRONG_CONCEPT_TAG",
     "__version__",
     "annotations_to_jsonld",
     "artifact_path",
@@ -61,11 +73,15 @@ __all__ = [
     "definitions",
     "framework_for_concept",
     "frameworks",
+    "from_hypothesis",
     "labels",
     "list_frameworks",
     "load",
     "mappings",
+    "proposed_concepts",
     "references",
+    "review_queue",
     "set_version",
+    "to_hypothesis",
     "version",
 ]
