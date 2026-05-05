@@ -62,3 +62,37 @@ def to_pdf_gcs_path(
         return None
     orgnr, year = parsed
     return f"gs://{bucket}/{orgnr}_aarsregnskap_{year}.pdf"
+
+
+def find_pdf_in_gcs(
+    urn: str,
+    *,
+    bucket: str = "brreg-regnskap",
+    fallback_buckets: tuple[str, ...] = ("publicpannelbrreg",),
+) -> str | None:
+    """Locate the source PDF for an annotation URN in GCS.
+
+    The canonical layout is ``gs://brreg-regnskap/{orgnr}_aarsregnskap_{year}.pdf``,
+    but the actual filename may vary (timestamp suffixes, language variants).
+    This helper tries the canonical path first, then prefix-scans the bucket for
+    any PDF whose name starts with ``{orgnr}`` and contains ``{year}``.
+    """
+    from google.cloud import storage
+
+    parsed = parse_urn(urn)
+    if parsed is None:
+        return None
+    orgnr, year = parsed
+
+    client = storage.Client()
+    canonical = f"{orgnr}_aarsregnskap_{year}.pdf"
+
+    for bucket_name in (bucket, *fallback_buckets):
+        b = client.bucket(bucket_name)
+        canonical_blob = b.blob(canonical)
+        if canonical_blob.exists():
+            return f"gs://{bucket_name}/{canonical}"
+        for blob in client.list_blobs(b, prefix=orgnr, max_results=20):
+            if str(year) in blob.name and blob.name.lower().endswith(".pdf"):
+                return f"gs://{bucket_name}/{blob.name}"
+    return None

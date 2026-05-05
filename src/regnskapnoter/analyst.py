@@ -198,6 +198,42 @@ class AnalystSession:
         r.raise_for_status()
         return r.json()
 
+    def download_pdf(self, urn: str, *, dest_path: str | None = None) -> str:
+        """Download the source PDF for a URN to a local file. Returns the local path.
+
+        If dest_path is None, writes to /tmp/{orgnr}_{year}.pdf.
+        """
+        from google.cloud import storage
+
+        from regnskapnoter.urn import find_pdf_in_gcs, parse_urn
+
+        parsed = parse_urn(urn)
+        if parsed is None:
+            raise ValueError(f"Not a valid URN: {urn}")
+        orgnr, year = parsed
+        gcs_uri = find_pdf_in_gcs(urn, bucket=self.pdf_bucket)
+        if gcs_uri is None:
+            raise FileNotFoundError(f"No PDF found in GCS for {urn}")
+
+        _, _, rest = gcs_uri.partition("gs://")
+        bucket_name, _, blob_name = rest.partition("/")
+        local = dest_path or f"/tmp/{orgnr}_{year}.pdf"
+        storage.Client().bucket(bucket_name).blob(blob_name).download_to_filename(local)
+        return local
+
+    def get_pdf_bytes(self, urn: str) -> bytes:
+        """Return the source PDF bytes for a URN. Used to feed the LLM analyst."""
+        from google.cloud import storage
+
+        from regnskapnoter.urn import find_pdf_in_gcs
+
+        gcs_uri = find_pdf_in_gcs(urn, bucket=self.pdf_bucket)
+        if gcs_uri is None:
+            raise FileNotFoundError(f"No PDF found in GCS for {urn}")
+        _, _, rest = gcs_uri.partition("gs://")
+        bucket_name, _, blob_name = rest.partition("/")
+        return storage.Client().bucket(bucket_name).blob(blob_name).download_as_bytes()
+
     def post_observations(
         self,
         annotations_df: pd.DataFrame,

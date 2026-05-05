@@ -264,3 +264,46 @@ rn stats
 #   "unique_uris": 12
 # }
 ```
+
+---
+
+## Reference LLM analyst (Gemini 2.5 Flash via Vertex AI)
+
+A complete reference implementation at `examples/llm_analyst.py`. It feeds the LLM:
+
+1. **The full source PDF** (`AnalystSession.get_pdf_bytes(urn)` — looks up the PDF by orgnr+year in `gs://brreg-regnskap` with prefix-scan fallback for non-canonical filenames).
+2. **The raw extraction JSON** (`AnalystSession.resolve_raw(urn)`) including all `[[p:N]]` page markers.
+3. **The unanchored observation** (`concept_id`, `value`, framework labels from `regnskapnoter.framework_for_concept`).
+
+The LLM returns a structured JSON decision; `_dispatch()` calls the appropriate `AnalystSession` method.
+
+### Run locally
+
+```bash
+pip install 'regnskapnoter[llm]'
+
+export HYPOTHESIS_TOKEN=...
+export HYPOTHESIS_GROUP=...
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json
+export GCP_PROJECT=sondreskarsten-d7d14
+export GCP_LOCATION=europe-west1
+
+python examples/llm_analyst.py --max 50 --dry-run     # see decisions without dispatching
+python examples/llm_analyst.py --max 50               # dispatch decisions to Hypothes.is
+```
+
+### Cloud Run deployment
+
+`examples/Dockerfile` builds a runnable image; `examples/deploy.sh` deploys as a Cloud Run Job and schedules hourly execution. Secrets `hypothesis-token` and `hypothesis-group` must exist in Secret Manager.
+
+```bash
+bash examples/deploy.sh
+```
+
+### Confidence gating
+
+The `MIN_CONFIDENCE` env var (default 0.6) gates dispatch. Decisions below the threshold are logged as `skipped_low_confidence` and remain in the review queue for the next pass (or human review).
+
+### Caching
+
+The reference implementation caches PDF bytes and raw JSONs per URN within a single run, so a batch of 50 annotations from 5 distinct filings only fetches each PDF/JSON once. PDFs typically ~200KB-2MB; in-memory cache fine.
