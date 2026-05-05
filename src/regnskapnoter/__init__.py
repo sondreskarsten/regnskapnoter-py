@@ -8,6 +8,7 @@ Quick start:
     >>> rn.canonicalize(extracted_df)       # column-keyed -> concept-keyed observations
 """
 
+from regnskapnoter.analyst import AnalystSession, build_annotations_with_urn
 from regnskapnoter.annotations import (
     annotations_to_jsonld,
     build_annotations,
@@ -23,10 +24,14 @@ from regnskapnoter.hypothesis import (
     PROPOSED_CONCEPT_TAG,
     REVIEW_TAG,
     WRONG_CONCEPT_TAG,
+    delete_hypothesis,
     from_hypothesis,
+    iter_review_queue,
     proposed_concepts,
+    re_anchor,
     review_queue,
     to_hypothesis,
+    update_hypothesis,
 )
 from regnskapnoter.loader import (
     artifact_path,
@@ -49,12 +54,19 @@ from regnskapnoter.tables import (
     mappings,
     references,
 )
+from regnskapnoter.urn import (
+    parse_urn,
+    to_gcs_path,
+    to_pdf_gcs_path,
+    to_urn,
+)
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __all__ = [
     "PROPOSED_CONCEPT_TAG",
     "REVIEW_TAG",
     "WRONG_CONCEPT_TAG",
+    "AnalystSession",
     "__version__",
     "annotations_to_jsonld",
     "artifact_path",
@@ -62,6 +74,7 @@ __all__ = [
     "axes",
     "axis_members",
     "build_annotations",
+    "build_annotations_with_urn",
     "build_tables_mapping",
     "calc_arcs",
     "canonicalize",
@@ -71,17 +84,25 @@ __all__ = [
     "concepts_in_framework",
     "coverage_report",
     "definitions",
+    "delete_hypothesis",
     "framework_for_concept",
     "frameworks",
     "from_hypothesis",
+    "iter_review_queue",
     "labels",
     "list_frameworks",
     "load",
     "mappings",
+    "parse_urn",
     "proposed_concepts",
+    "re_anchor",
     "references",
     "review_queue",
     "set_version",
+    "to_gcs_path",
     "to_hypothesis",
+    "to_pdf_gcs_path",
+    "to_urn",
+    "update_hypothesis",
     "version",
 ]

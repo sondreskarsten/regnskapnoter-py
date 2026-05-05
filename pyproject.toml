@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "regnskapnoter"
-version = "0.3.0"
+version = "0.4.0"
 description = "Python client for the Norwegian regnskapsnoter taxonomy. Concept-keyed access with framework grouping primitives."
 readme = "README.md"
 authors = [{name = "Sondre Skarsten"}]
@@ -29,6 +29,9 @@ dependencies = [
 test = ["pytest>=7.0", "pytest-cov>=4.0"]
 dev = ["ruff>=0.4.0", "mypy>=1.5.0"]
 gcs = ["google-cloud-storage>=2.10.0"]
+
+[project.scripts]
+rn = "regnskapnoter.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/sondreskarsten/regnskapnoter-py"

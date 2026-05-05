@@ -136,6 +136,55 @@ PDF target annotations get a proper `FragmentSelector` with `page=N`:
 
 Falls back to `RangeSelector` when no page metadata is present (legacy raw JSON).
 
+
+## LLM analyst loop (no human UI)
+
+For an end-to-end annotation review pipeline driven by an LLM analyst — no human UI, no Hypothes.is web rendering — see [docs/llm-analyst-loop.md](docs/llm-analyst-loop.md).
+
+Highlights:
+
+```python
+import os
+import regnskapnoter as rn
+
+session = rn.AnalystSession(
+    group_id=os.environ["HYPOTHESIS_GROUP"],
+    api_token=os.environ["HYPOTHESIS_TOKEN"],
+)
+
+# Push annotations for one filing
+raw_json, observations = rn.cli._load_raw_and_observations("811722332", 2024)
+annotations = rn.build_annotations_with_urn(raw_json, observations)
+session.post_observations(annotations)
+
+# LLM analyst iterates the review queue
+for ann in session.review_queue():
+    raw = session.resolve_raw(ann["uri"])  # urn:noter:* -> raw JSON dict
+    decision = llm_decide(ann, raw)
+    if decision["action"] == "re-anchor":
+        session.re_anchor(ann, exact=..., prefix=..., suffix=..., page=...)
+    elif decision["action"] == "propose-concept":
+        session.propose_concept(ann, new_concept_id=..., rationale=..., paragraph_citation=...)
+```
+
+URN scheme used as the Hypothes.is URI:
+
+```
+urn:noter:{orgnr}:{year}    # e.g. urn:noter:811722332:2024
+```
+
+The LLM analyst calls `rn.to_gcs_path(urn)` to get the canonical raw JSON path or `rn.to_pdf_gcs_path(urn)` for the source PDF.
+
+## CLI
+
+```bash
+rn push  --orgnr 811722332 --year 2024     # push annotations for one filing
+rn pull  --tag proposed-concept            # pull analyst contributions
+rn stats                                    # group-level summary
+```
+
+Reads `HYPOTHESIS_TOKEN` and `HYPOTHESIS_GROUP` from the environment.
+
 ## Version pinning
 
 ```python

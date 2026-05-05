@@ -248,3 +248,153 @@ def proposed_concepts(df: pd.DataFrame) -> pd.DataFrame:
 def review_queue(df: pd.DataFrame) -> pd.DataFrame:
     """Filter a from_hypothesis() DataFrame to items needing analyst attention."""
     return df[df["is_review_needed"] | df["is_wrong_concept"]].copy()
+
+
+# ---------------------------------------------------------------------------
+# LLM analyst loop: update + delete + iterate
+# ---------------------------------------------------------------------------
+
+
+def update_hypothesis(
+    hypothesis_id: str,
+    *,
+    api_token: str,
+    text: str | None = None,
+    tags: Iterable[str] | None = None,
+    selectors: Iterable[dict] | None = None,
+    extra: dict | None = None,
+) -> dict:
+    """Patch an existing Hypothes.is annotation. Used by LLM analyst to re-anchor
+    unmatched annotations or re-classify wrong-concept ones.
+
+    Only the parameters that are not None are sent in the PATCH payload.
+    """
+    h = _headers(api_token)
+    h["Content-Type"] = "application/json"
+    payload: dict = {}
+    if text is not None:
+        payload["text"] = text
+    if tags is not None:
+        payload["tags"] = list(tags)
+    if selectors is not None:
+        sels = list(selectors)
+        payload["target"] = [{"selector": sels}] if sels else [{}]
+    if extra is not None:
+        payload["extra"] = extra
+    if not payload:
+        return {"hypothesis_id": hypothesis_id, "status": "noop"}
+    r = requests.patch(
+        f"{API_BASE}/annotations/{hypothesis_id}", headers=h, json=payload, timeout=15
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def delete_hypothesis(hypothesis_id: str, *, api_token: str) -> bool:
+    """Delete an annotation by ID. Returns True on success."""
+    h = _headers(api_token)
+    r = requests.delete(f"{API_BASE}/annotations/{hypothesis_id}", headers=h, timeout=15)
+    if r.status_code in (200, 204):
+        return True
+    r.raise_for_status()
+    return False
+
+
+def re_anchor(
+    hypothesis_id: str,
+    *,
+    api_token: str,
+    exact: str,
+    prefix: str = "",
+    suffix: str = "",
+    page: int | None = None,
+    pdf_uri: str | None = None,
+    new_concept_id: str | None = None,
+) -> dict:
+    """High-level helper for the LLM analyst: re-anchor an unmatched annotation
+    by supplying a fresh TextQuoteSelector (and optionally a FragmentSelector
+    with a PDF page), and optionally relabel the concept_id.
+
+    Removes ``review-needed`` from the tag set on success.
+    """
+    selectors: list[dict] = [
+        {"type": "TextQuoteSelector", "exact": exact, "prefix": prefix, "suffix": suffix}
+    ]
+    if page is not None and pdf_uri:
+        selectors.append(
+            {
+                "type": "FragmentSelector",
+                "conformsTo": "http://tools.ietf.org/rfc/rfc3778",
+                "value": f"page={page}",
+                "refinedBy": selectors[0],
+            }
+        )
+
+    current = requests.get(
+        f"{API_BASE}/annotations/{hypothesis_id}", headers=_headers(api_token), timeout=15
+    )
+    current.raise_for_status()
+    existing = current.json()
+    tags = [t for t in (existing.get("tags") or []) if t != REVIEW_TAG]
+    if new_concept_id:
+        tags = [t for t in tags if not t.startswith("concept:")]
+        tags.append(f"concept:{new_concept_id}")
+
+    return update_hypothesis(hypothesis_id, api_token=api_token, tags=tags, selectors=selectors)
+
+
+def iter_review_queue(
+    *,
+    group_id: str,
+    api_token: str,
+    batch_size: int = 50,
+    tag: str = REVIEW_TAG,
+):
+    """Generator yielding annotations needing review, oldest first.
+
+    Designed for the LLM analyst loop:
+
+        for ann in rn.iter_review_queue(group_id=g, api_token=t):
+            raw = rn.resolve_raw(ann["uri"])
+            # ... LLM picks new TextQuoteSelector ...
+            rn.re_anchor(ann["hypothesis_id"], api_token=t, exact="...", prefix="...", suffix="...")
+    """
+    cursor = None
+    while True:
+        params: dict = {
+            "group": group_id,
+            "limit": batch_size,
+            "tags": tag,
+            "sort": "updated",
+            "order": "asc",
+        }
+        if cursor:
+            params["search_after"] = cursor
+        r = requests.get(
+            f"{API_BASE}/search", headers=_headers(api_token), params=params, timeout=15
+        )
+        r.raise_for_status()
+        rows = r.json().get("rows") or []
+        if not rows:
+            return
+        for row in rows:
+            yield {
+                "hypothesis_id": row.get("id"),
+                "uri": row.get("uri"),
+                "tags": row.get("tags") or [],
+                "text": row.get("text"),
+                "concept_id": next(
+                    (
+                        t.split(":", 1)[1]
+                        for t in (row.get("tags") or [])
+                        if t.startswith("concept:")
+                    ),
+                    None,
+                ),
+                "value": next(
+                    (t.split(":", 1)[1] for t in (row.get("tags") or []) if t.startswith("value:")),
+                    None,
+                ),
+                "raw": row,
+            }
+        cursor = rows[-1].get("updated")
