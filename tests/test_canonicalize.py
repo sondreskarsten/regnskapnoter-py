@@ -27,7 +27,7 @@ def test_canonicalize_skatt_aaret():
     assert "regnskap-no:BetalbarSkattAaret" in long["concept_id"].tolist()
     assert "regnskap-no:Skattekostnad" in long["concept_id"].tolist()
     assert (long["concept_id"] != "irrelevant_column").all()
-    assert len(long) == 4  # 2 orgnrs × 2 mapped columns
+    assert len(long) == 4  # 2 orgnrs x 2 mapped columns
 
 
 def test_canonicalize_keeps_unmapped_when_requested():
