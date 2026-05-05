@@ -19,8 +19,16 @@ def test_definitions_loads():
 
 def test_labels_have_nb_and_en():
     lab = rn.labels()
-    nb = lab[(lab["lang"] == "nb") & (lab["role"] == "standardLabel") & (lab["subject_kind"] == "concept")]
-    en = lab[(lab["lang"] == "en") & (lab["role"] == "standardLabel") & (lab["subject_kind"] == "concept")]
+    nb = lab[
+        (lab["lang"] == "nb")
+        & (lab["role"] == "standardLabel")
+        & (lab["subject_kind"] == "concept")
+    ]
+    en = lab[
+        (lab["lang"] == "en")
+        & (lab["role"] == "standardLabel")
+        & (lab["subject_kind"] == "concept")
+    ]
     assert len(nb) == len(rn.concepts())
     assert len(en) == len(rn.concepts())
 
