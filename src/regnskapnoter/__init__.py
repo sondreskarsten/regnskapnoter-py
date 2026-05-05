@@ -8,6 +8,11 @@ Quick start:
     >>> rn.canonicalize(extracted_df)       # column-keyed -> concept-keyed observations
 """
 
+from regnskapnoter.annotations import (
+    annotations_to_jsonld,
+    build_annotations,
+    coverage_report,
+)
 from regnskapnoter.frameworks import (
     concepts_in_framework,
     framework_for_concept,
@@ -36,13 +41,15 @@ from regnskapnoter.tables import (
     references,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
     "__version__",
+    "annotations_to_jsonld",
     "artifact_path",
     "available_versions",
     "axes",
     "axis_members",
+    "build_annotations",
     "build_tables_mapping",
     "calc_arcs",
     "canonicalize",
@@ -50,6 +57,7 @@ __all__ = [
     "concept_for_column",
     "concepts",
     "concepts_in_framework",
+    "coverage_report",
     "definitions",
     "framework_for_concept",
     "frameworks",

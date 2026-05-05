@@ -52,6 +52,42 @@ skatt_concepts = set(rn.concepts_in_framework("§ 7-29"))
 skatt_obs = long[long["concept_id"].isin(skatt_concepts)]
 ```
 
+
+## Annotate raw notes with concept IDs (WADM)
+
+Pair structured observations back to the raw text spans they were extracted from:
+
+```python
+import regnskapnoter as rn
+import json
+
+raw_json = json.loads(open("/path/to/811722332_aarsregnskap_2024_v2.json").read())
+observations = rn.canonicalize(skatt_df, table="skatt_aaret")  # ... + other tables
+
+annotations = rn.build_annotations(
+    raw_json, observations,
+    source_text_uri="gs://sondre_brreg_data/raw/noter_extraction_2025/raw/811722332_aarsregnskap_2024_v2.json",
+    source_pdf_uri="gs://brreg-regnskap/811722332_aarsregnskap_2024.pdf",  # optional
+)
+rn.coverage_report(annotations)
+# {'total': 105, 'matched': 102, 'unmatched': 3, 'match_rate': 0.97, 'concepts_unique': 41}
+```
+
+Each annotation conforms to the [W3C Web Annotation Data Model](https://www.w3.org/TR/annotation-model/) and pairs:
+- **Target**: source URI + `TextQuoteSelector` (`prefix`/`exact`/`suffix`) on the raw note's `full_text`
+- **Body**: `concept_id` + observed `value`
+- **Refinement**: `note_number`, `note_title`
+
+Two target shapes are emitted:
+- **Text** target → the raw JSON file (always emitted)
+- **PDF** target → the source PDF, with the `TextQuoteSelector` ready for re-resolution against OCR'd PDF text (emitted when `source_pdf_uri` is provided)
+
+Export to WADM JSON-LD for Hypothes.is / INCEpTION import:
+
+```python
+jsonld_payload = rn.annotations_to_jsonld(annotations)
+```
+
 ## Version pinning
 
 ```python

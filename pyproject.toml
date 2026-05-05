@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "regnskapnoter"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python client for the Norwegian regnskapsnoter taxonomy. Concept-keyed access with framework grouping primitives."
 readme = "README.md"
 authors = [{name = "Sondre Skarsten"}]
