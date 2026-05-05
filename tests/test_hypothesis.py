@@ -95,7 +95,9 @@ def test_to_hypothesis_uses_source_url_template(matched_annotations):
         m.json.return_value = {"id": "x"}
         return m
 
-    template = lambda row: f"https://my-viewer.com/{row['body_concept_id']}"
+    def template(row):
+        return f"https://my-viewer.com/{row['body_concept_id']}"
+
     with patch("regnskapnoter.hypothesis.requests.post", side_effect=fake_post):
         rn.to_hypothesis(
             matched_annotations,
