@@ -185,6 +185,39 @@ rn stats                                    # group-level summary
 
 Reads `HYPOTHESIS_TOKEN` and `HYPOTHESIS_GROUP` from the environment.
 
+
+
+## Universal OCR text input
+
+The annotation pipeline accepts every producer's output shape via adapters:
+
+```python
+import regnskapnoter as rn
+
+# Current Gemini-on-PDF JSON
+doc = rn.from_gemini_json(raw_json)
+
+# Plain OCR text per page (ocrmypdf, tesseract text mode, Cloud Vision text-only)
+doc = rn.from_text_pages(pages, orgnr="811722332", year=2024, producer="ocrmypdf")
+
+# Single text blob (with optional [[p:N]] markers)
+doc = rn.from_text_blob(text, orgnr="811722332", year=2024, producer="tesseract")
+
+# Tesseract TSV — word-level with bounding boxes (cascade voter "tesseract_tsv")
+doc = rn.from_tesseract_tsv(tsv_string, orgnr="811722332", year=2024)
+
+# Cloud Vision per-page text + per-word bboxes
+doc = rn.from_cloud_vision(pages, orgnr="811722332", year=2024)
+
+# Docling DoclingDocument
+doc = rn.from_docling(docling_doc, orgnr="811722332", year=2024)
+
+# build_annotations works on every Document
+df = rn.build_annotations(doc, observations, source_pdf_uri="gs://...")
+```
+
+When the producer supplies word-level bounding boxes, PDF annotations carry a Media Fragments `xywh=` selector chain — `page=N → xywh=x,y,w,h → TextQuoteSelector` — so viewers can highlight the exact rectangle on the rendered page.
+
 ## Version pinning
 
 ```python

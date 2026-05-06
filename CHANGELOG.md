@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.7.0] - 2026-05-06 — Universal OCR text input
+
+### Added
+
+- `regnskapnoter.adapters` module: 6 adapters that normalize every regnskap document producer into a common `Document` shape:
+  - `from_gemini_json(raw_json)` — current production format with `[[p:N]]` markers
+  - `from_text_pages(pages, orgnr=, year=, producer=)` — per-page text (ocrmypdf, tesseract text mode, Cloud Vision text-only)
+  - `from_text_blob(text, ...)` — single string with optional `[[p:N]]` markers
+  - `from_tesseract_tsv(tsv, orgnr=, year=, min_conf=)` — word-level rows + bounding boxes; accepts string or pre-parsed dict iterable
+  - `from_cloud_vision(pages, ...)` — per-page text + per-word bounding boxes
+  - `from_docling(doc, ...)` — duck-typed for `DoclingDocument`
+  - `from_spans(spans, ...)` — escape hatch for custom shapes
+- `Document` and `TextSpan` dataclasses exported at top level. `Document.joined_text()` reconstructs page-marker-tagged text.
+- `build_annotations()` now accepts either a Gemini-shaped dict or a `Document`. Backward-compatible.
+- **Bounding-box-aware FragmentSelector**: when the producer supplies word-level bboxes (`tesseract_tsv`, `cloud_vision`, `docling`), pdf annotations now emit a refined selector chain:
+  ```
+  FragmentSelector(value="page=N") →
+    refinedBy: FragmentSelector(value="xywh=x,y,w,h", conformsTo=Media Fragments URI 1.0) →
+      refinedBy: TextQuoteSelector(exact, prefix, suffix)
+  ```
+  This is the W3C Media Fragments URI 1.0 spec — viewers like Hypothes.is, Pagedraw, INCEpTION can highlight the exact rectangle on the rendered page.
+
+### Live validation (artifacts at `gs://sondre_brreg_data/raw/regnskapnoter_validation/v0_7_0_ocr_validation.{py,txt}`)
+
+End-to-end validation against real OCR cascade output (`gs://sondre_brreg_data/raw/ocr_bench_11k/`) for orgnr 811722332/2024:
+
+| producer | matched | match rate |
+|---|---:|---:|
+| gemini-on-pdf (baseline) | 92/102 | 90.2% |
+| **tesseract** (full_text) | **91/102** | **89.2%** |
+| **easyocr** (full_text) | **89/102** | **87.3%** |
+
+Raw tesseract OCR text — no LLM at extraction time — comes within 1 concept of the Gemini-on-PDF baseline. Every engine in the 7-voter cascade (`ocrmypdf`, `tesseract`, `tesseract_tsv`, `paddleocr`, `doctr`, `easyocr`, `nougat`) is now a usable input.
+
+### Tests
+
+- 16 new adapter tests in `tests/test_adapters.py` covering all 6 input shapes plus `build_annotations` integration through each.
+- 69 total passing across 9 test files.
+
 ## [0.6.0] - 2026-05-05 — GCS-backed store; Hypothes.is removed
 
 ### BREAKING

@@ -8,8 +8,27 @@ Quick start:
     >>> rn.canonicalize(extracted_df, table="skatt_aaret")
     >>> rn.build_annotations_with_urn(raw_json, observations)
     >>> session = rn.AnalystSession(); session.review_queue(orgnr=..., year=...)
+
+OCR / extraction inputs (any producer):
+    >>> doc = rn.from_gemini_json(raw_json)              # current production
+    >>> doc = rn.from_text_pages(pages, orgnr=, year=)   # ocrmypdf, tesseract text
+    >>> doc = rn.from_tesseract_tsv(tsv, orgnr=, year=)  # word-level + bboxes
+    >>> doc = rn.from_cloud_vision(pages, orgnr=, year=) # Cloud Vision OCR
+    >>> doc = rn.from_docling(docling_doc, orgnr=, year=)# DoclingDocument
+    >>> rn.build_annotations(doc, observations)          # works on any Document
 """
 
+from regnskapnoter.adapters import (
+    Document,
+    TextSpan,
+    from_cloud_vision,
+    from_docling,
+    from_gemini_json,
+    from_spans,
+    from_tesseract_tsv,
+    from_text_blob,
+    from_text_pages,
+)
 from regnskapnoter.analyst import AnalystSession, build_annotations_with_urn
 from regnskapnoter.annotations import (
     annotations_to_jsonld,
@@ -56,11 +75,13 @@ from regnskapnoter.urn import (
     to_urn,
 )
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     "AnalystSession",
+    "Document",
     "GCSAnnotationStore",
+    "TextSpan",
     "__version__",
     "annotations_to_jsonld",
     "annotations_to_post_events",
@@ -81,6 +102,13 @@ __all__ = [
     "definitions",
     "framework_for_concept",
     "frameworks",
+    "from_cloud_vision",
+    "from_docling",
+    "from_gemini_json",
+    "from_spans",
+    "from_tesseract_tsv",
+    "from_text_blob",
+    "from_text_pages",
     "labels",
     "list_frameworks",
     "load",

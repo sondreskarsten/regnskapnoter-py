@@ -27,7 +27,10 @@ import hashlib
 import json
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from regnskapnoter.adapters import Document
 
 import pandas as pd
 
@@ -113,8 +116,41 @@ def _find_quote(text: str, candidates: list[str]) -> tuple[str, str, str, int] |
     return None
 
 
+def _word_bbox(span, exact: str) -> tuple[int, int, int, int] | None:
+    """Locate the bounding box of ``exact`` within a span's word list.
+
+    Returns the bounding box of the first run of consecutive words whose
+    concatenation (joined by single space) starts with ``exact``. Returns
+    None if the span has no word-level info or no match is found.
+    """
+    if not span.words:
+        return None
+    needle = exact.strip()
+    if not needle:
+        return None
+    n = len(span.words)
+    for i in range(n):
+        run = []
+        for j in range(i, n):
+            run.append(span.words[j][0])
+            joined = " ".join(run)
+            if joined == needle or joined.startswith(needle):
+                xs = [span.words[k][1] for k in range(i, j + 1)]
+                ys = [span.words[k][2] for k in range(i, j + 1)]
+                rights = [span.words[k][1] + span.words[k][3] for k in range(i, j + 1)]
+                bottoms = [span.words[k][2] + span.words[k][4] for k in range(i, j + 1)]
+                left = int(min(xs))
+                top = int(min(ys))
+                right = int(max(rights))
+                bottom = int(max(bottoms))
+                return (left, top, right - left, bottom - top)
+            if len(joined) > len(needle) + 4:
+                break
+    return None
+
+
 def build_annotations(
-    raw_json: dict,
+    source: dict | Document,
     observations: pd.DataFrame,
     *,
     source_text_uri: str | None = None,
@@ -145,9 +181,12 @@ def build_annotations(
         body_concept_id, body_value, note_number, note_title, page,
         match_status ('matched'|'unmatched'), created, creator
     """
-    notes = raw_json.get("notes") or []
-    orgnr = str(raw_json.get("orgnr") or "")
-    year = raw_json.get("year")
+    from regnskapnoter.adapters import Document as _Doc
+    from regnskapnoter.adapters import from_gemini_json
+
+    document: _Doc = source if isinstance(source, _Doc) else from_gemini_json(source)
+    orgnr = str(document.orgnr or "")
+    year = document.year
 
     obs_for_orgnr = (
         observations[
@@ -168,27 +207,23 @@ def build_annotations(
 
         candidates = _format_value_candidates(val)
         match = None
-        match_note: dict | None = None
+        match_span = None
         match_page: int | None = None
-        for n in notes:
-            if not isinstance(n, dict):
-                continue
-            full_text_raw = n.get("full_text") or ""
-            full_text_clean = _strip_page_markers(full_text_raw)
-            quote = _find_quote(full_text_clean, candidates)
+        match_xywh: tuple[int, int, int, int] | None = None
+        for span in document.spans:
+            text_clean = _strip_page_markers(span.text)
+            quote = _find_quote(text_clean, candidates)
             if quote:
                 match = quote
-                match_note = n
-                if "[[p:" in full_text_raw:
-                    match_page = _page_for_offset(full_text_raw, quote[3])
-                if match_page is None and n.get("page_start"):
-                    match_page = n.get("page_start")
+                match_span = span
+                match_page = span.page
+                match_xywh = _word_bbox(span, quote[1])
                 break
 
-        nn = (match_note or {}).get("note_number", "") if match_note else ""
+        nn = match_span.note_number if match_span else ""
         annotation_id = _annotation_id(orgnr, year, cid, val, nn)
 
-        if match and match_note:
+        if match and match_span:
             prefix, exact, suffix, _offset = match
             text_selector = {
                 "type": "TextQuoteSelector",
@@ -196,7 +231,7 @@ def build_annotations(
                 "prefix": prefix,
                 "suffix": suffix,
             }
-            note_title = match_note.get("note_title") or match_note.get("title", "")
+            note_title = match_span.note_title
             rows.append(
                 {
                     "annotation_id": annotation_id,
@@ -205,7 +240,7 @@ def build_annotations(
                     "selector_json": json.dumps(text_selector, ensure_ascii=False),
                     "body_concept_id": cid,
                     "body_value": str(val),
-                    "note_number": match_note.get("note_number", ""),
+                    "note_number": match_span.note_number,
                     "note_title": note_title,
                     "page": match_page,
                     "match_status": "matched",
@@ -214,8 +249,21 @@ def build_annotations(
                 }
             )
             if source_pdf_uri:
-                if match_page is not None:
+                if match_page is not None and match_xywh is not None:
+                    x, y, w, h = match_xywh
                     pdf_selector: dict = {
+                        "type": "FragmentSelector",
+                        "conformsTo": "http://tools.ietf.org/rfc/rfc3778",
+                        "value": f"page={match_page}",
+                        "refinedBy": {
+                            "type": "FragmentSelector",
+                            "conformsTo": "http://www.w3.org/TR/media-frags/",
+                            "value": f"xywh={x},{y},{w},{h}",
+                            "refinedBy": text_selector,
+                        },
+                    }
+                elif match_page is not None:
+                    pdf_selector = {
                         "type": "FragmentSelector",
                         "conformsTo": "http://tools.ietf.org/rfc/rfc3778",
                         "value": f"page={match_page}",
@@ -234,7 +282,7 @@ def build_annotations(
                         "selector_json": json.dumps(pdf_selector, ensure_ascii=False),
                         "body_concept_id": cid,
                         "body_value": str(val),
-                        "note_number": match_note.get("note_number", ""),
+                        "note_number": match_span.note_number,
                         "note_title": note_title,
                         "page": match_page,
                         "match_status": "matched",

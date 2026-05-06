@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 1700" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace">
+  <defs>
+    <!-- Color tokens -->
+    <style><![CDATA[
+      .bg          { fill: #0f1115; }
+      .panel       { fill: #161a22; stroke: #2a3142; stroke-width: 1; }
+      .panel-input { fill: #11202b; stroke: #1d4861; stroke-width: 1; }
+      .panel-out   { fill: #1c1430; stroke: #4a3782; stroke-width: 1; }
+      .panel-llm   { fill: #2a1a13; stroke: #7a4a2a; stroke-width: 1; }
+      .panel-val   { fill: #0f2418; stroke: #2a6346; stroke-width: 1; }
+      .lane-label  { font-family: "IBM Plex Sans", system-ui, sans-serif; font-weight: 600; fill: #d4d8e0; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
+      .step-num    { fill: #6db8ff; font-weight: 700; font-size: 11px; letter-spacing: 0.05em; }
+      .step-num-out { fill: #c89cff; font-weight: 700; font-size: 11px; letter-spacing: 0.05em; }
+      .step-num-llm { fill: #ffaa6b; font-weight: 700; font-size: 11px; letter-spacing: 0.05em; }
+      .step-num-val { fill: #6dd9a3; font-weight: 700; font-size: 11px; letter-spacing: 0.05em; }
+      .title       { fill: #f0f2f6; font-weight: 700; font-size: 13px; }
+      .title-s     { fill: #f0f2f6; font-weight: 600; font-size: 12px; }
+      .text        { fill: #c8ccd5; font-size: 11px; }
+      .text-s      { fill: #98a1b3; font-size: 10.5px; }
+      .text-num    { fill: #6dd9a3; font-weight: 600; font-size: 11px; }
+      .text-warn   { fill: #ffaa6b; font-weight: 600; font-size: 11px; }
+      .accent      { fill: #6db8ff; font-weight: 600; font-size: 11px; }
+      .arrow       { stroke: #4a5566; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+      .arrow-loop  { stroke: #ffaa6b; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; marker-end: url(#arrow-loop); }
+      .gcs         { fill: #4285f4; }
+      .check       { fill: #6dd9a3; font-weight: 700; }
+      .code        { font-family: "JetBrains Mono", ui-monospace, monospace; fill: #d4d8e0; font-size: 10.5px; }
+      .code-key    { fill: #6db8ff; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10.5px; }
+      .code-val    { fill: #ffd28d; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10.5px; }
+      .divider     { stroke: #2a3142; stroke-width: 1; }
+      .pill        { fill: #2a3142; }
+      .pill-text   { fill: #c8ccd5; font-size: 10px; font-weight: 600; }
+    ]]></style>
+
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4a5566"/>
+    </marker>
+    <marker id="arrow-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ffaa6b"/>
+    </marker>
+
+    <!-- GCS bucket icon -->
+    <symbol id="gcs-icon" viewBox="0 0 16 16">
+      <path d="M2 4 L8 1 L14 4 L14 12 L8 15 L2 12 Z" fill="#4285f4" stroke="#1d6bd6" stroke-width="0.5"/>
+    </symbol>
+  </defs>
+
+  <rect class="bg" width="1480" height="1700"/>
+
+  <!-- ─── Header ─── -->
+  <text x="40" y="44" class="title" font-size="22">regnskapnoter v0.6.0</text>
+  <text x="40" y="68" class="text-s" font-size="13">input · output · validation — traced against orgnr 811722332 / 2024</text>
+  <line x1="40" y1="84" x2="1440" y2="84" class="divider"/>
+
+  <!-- ═════════════ STAGE 1 · INPUTS ═════════════ -->
+  <text x="40" y="118" class="lane-label">① stage 1  ·  inputs (immutable, read-only on GCS)</text>
+
+  <!-- Input box: raw JSON -->
+  <rect class="panel-input" x="40" y="138" width="440" height="220" rx="6"/>
+  <text x="60" y="162" class="step-num">RAW JSON</text>
+  <use href="#gcs-icon" x="430" y="146" width="20" height="20"/>
+  <text x="60" y="184" class="title-s">noter-extraction output</text>
+  <text x="60" y="200" class="text-s">gs://sondre_brreg_data/raw/noter_extraction_2025/raw/</text>
+  <text x="60" y="215" class="text-s">  811722332_aarsregnskap_2024_v2.json</text>
+  <line x1="60" y1="226" x2="460" y2="226" class="divider"/>
+  <text x="60" y="244" class="code-key">orgnr</text>      <text x="160" y="244" class="code-val">"811722332"</text>
+  <text x="60" y="260" class="code-key">year</text>       <text x="160" y="260" class="code-val">2024</text>
+  <text x="60" y="276" class="code-key">total_pages</text><text x="160" y="276" class="code-val">12</text>
+  <text x="60" y="292" class="code-key">notes</text>      <text x="160" y="292" class="code-val">[{</text>
+  <text x="80" y="308" class="code-key">note_number</text><text x="200" y="308" class="code-val">"1"</text>
+  <text x="80" y="324" class="code-key">page_start, page_end</text><text x="240" y="324" class="code-val">5, 5</text>
+  <text x="80" y="340" class="code-key">full_text</text><text x="200" y="340" class="code-val">"[[p:5]]Resultat før …"</text>
+  <text x="60" y="356" class="text-num">10 notes parsed (live)</text>
+
+  <!-- Input box: structured CSVs -->
+  <rect class="panel-input" x="500" y="138" width="440" height="220" rx="6"/>
+  <text x="520" y="162" class="step-num">STRUCTURED CSVs · 15 build_tables</text>
+  <use href="#gcs-icon" x="890" y="146" width="20" height="20"/>
+  <text x="520" y="184" class="title-s">noter-extraction-tidy-tables output</text>
+  <text x="520" y="200" class="text-s">gs://sondre_brreg_data/raw/noter_extraction_2025/structured/</text>
+  <text x="520" y="215" class="text-s">  {table}/811722332.csv</text>
+  <line x1="520" y1="226" x2="920" y2="226" class="divider"/>
+  <text x="520" y="246" class="code">skatt_aaret/811722332.csv:</text>
+  <text x="520" y="262" class="code-key">orgnr,report_year,resultat_for_skatt,</text>
+  <text x="520" y="278" class="code-key">  betalbar_skatt,skattekostnad_total, …</text>
+  <text x="520" y="298" class="code-val">811722332,2024,-873527,1100,1320, …</text>
+  <text x="520" y="320" class="text-s">  + 14 other tables: aksjekapital_struktur,</text>
+  <text x="520" y="335" class="text-s">  egenkapital_summary, lonn_ytelser, garantier, …</text>
+  <text x="520" y="354" class="text-num">15 tables → 152 observation rows</text>
+
+  <!-- Input box: taxonomy -->
+  <rect class="panel-input" x="960" y="138" width="480" height="220" rx="6"/>
+  <text x="980" y="162" class="step-num">TAXONOMY · regnskapnoter-taxonomy v1.0.2</text>
+  <use href="#gcs-icon" x="1410" y="146" width="20" height="20"/>
+  <text x="980" y="184" class="title-s">authoritative concept dictionary</text>
+  <text x="980" y="200" class="text-s">gs://regnskapnoter-taxonomy/latest/</text>
+  <line x1="980" y1="226" x2="1420" y2="226" class="divider"/>
+  <text x="980" y="246" class="code">concepts.parquet</text><text x="1180" y="246" class="text-num">279 concepts</text>
+  <text x="980" y="262" class="code">definitions.parquet</text><text x="1180" y="262" class="text-num">100% verbatim coverage</text>
+  <text x="980" y="278" class="code">references.parquet</text><text x="1180" y="278" class="text-s">framework citations</text>
+  <text x="980" y="294" class="code">to-build-tables.csv</text><text x="1180" y="294" class="text-num">230 column → concept_id</text>
+  <text x="980" y="310" class="code">calc_arcs.parquet</text><text x="1180" y="310" class="text-s">parent ≈ Σ children</text>
+  <text x="980" y="326" class="code">axes / axis_members</text><text x="1180" y="326" class="text-s">4 axes · 31 members</text>
+  <text x="980" y="354" class="text-num">CC-BY-4.0 · 4159 RDF triples</text>
+
+  <!-- ═════════════ STAGE 2 · TRANSFORM ═════════════ -->
+  <text x="40" y="402" class="lane-label">② stage 2  ·  transform (in-process, deterministic)</text>
+
+  <!-- canonicalize -->
+  <rect class="panel" x="40" y="422" width="680" height="180" rx="6"/>
+  <text x="60" y="448" class="title">rn.canonicalize(df, table=…)</text>
+  <text x="60" y="464" class="text-s">wide build_tables row → long (orgnr, year, concept_id, value)</text>
+  <line x1="60" y1="476" x2="700" y2="476" class="divider"/>
+  <text x="60" y="496" class="code-key">IN</text>
+  <text x="100" y="496" class="code">orgnr=811…, year=2024, betalbar_skatt=1100, skattekostnad_total=1320, …</text>
+  <text x="60" y="516" class="code-key">OUT</text>
+  <text x="100" y="516" class="code">concept_id                          value</text>
+  <text x="100" y="534" class="code-val">regnskap-no:BetalbarSkattAaret      1100</text>
+  <text x="100" y="550" class="code-val">regnskap-no:Skattekostnad           1320</text>
+  <text x="100" y="566" class="text-s">…  (one row per mapped column)</text>
+  <text x="60" y="589" class="text-num">repeat × 15 tables → concat → 152 rows / 62 unique concepts</text>
+
+  <!-- build_annotations -->
+  <rect class="panel" x="740" y="422" width="700" height="180" rx="6"/>
+  <text x="760" y="448" class="title">rn.build_annotations_with_urn(raw_json, observations)</text>
+  <text x="760" y="464" class="text-s">long observations + raw text → WADM annotations</text>
+  <line x1="760" y1="476" x2="1420" y2="476" class="divider"/>
+  <text x="760" y="496" class="text">For each (concept_id, value):</text>
+  <text x="760" y="514" class="text-s">1. value-format candidates — e.g. -873527 → ["-873 527", "-873\u00a0527", "(873 527)", "-873527"]</text>
+  <text x="760" y="530" class="text-s">2. scan each note's full_text for first match</text>
+  <text x="760" y="546" class="text-s">3. emit text annotation (TextQuoteSelector) + pdf annotation (FragmentSelector page=N from [[p:N]])</text>
+  <text x="760" y="562" class="text-s">4. miss → unmatched annotation (will end up in review_queue)</text>
+  <text x="760" y="589" class="text-num">194 annotations · matched=184 · unmatched=10 · match rate 94.8%</text>
+
+  <!-- arrows from inputs to transform -->
+  <path class="arrow" d="M 260 360 L 260 420"/>
+  <path class="arrow" d="M 720 360 L 380 420"/>
+  <path class="arrow" d="M 1200 360 L 1200 392 L 1090 392 L 1090 420"/>
+
+  <!-- arrow from canonicalize to build_annotations -->
+  <path class="arrow" d="M 720 510 L 740 510"/>
+
+  <!-- ═════════════ STAGE 3 · OUTPUT (event log) ═════════════ -->
+  <text x="40" y="648" class="lane-label">③ stage 3  ·  output (append-only event log on GCS)</text>
+
+  <rect class="panel-out" x="40" y="668" width="1400" height="380" rx="6"/>
+  <text x="60" y="694" class="step-num-out">SHARD</text>
+  <text x="60" y="714" class="title">gs://sondre_brreg_data/annotations/noter/811722332/2024/events.parquet</text>
+  <text x="60" y="732" class="text-s">one parquet file per (orgnr, year). idempotent: event_id = sha256(annotation_id|sequence) is the dedup key.</text>
+
+  <!-- Schema column -->
+  <rect x="60" y="752" width="430" height="280" fill="#1f1936" stroke="#3b2c5a" stroke-width="1" rx="4"/>
+  <text x="80" y="776" class="title-s">event schema · 20 columns</text>
+  <line x1="80" y1="784" x2="470" y2="784" class="divider"/>
+  <text x="80" y="804" class="code-key">event_id</text>      <text x="220" y="804" class="text-s">sha256(annotation_id|seq)</text>
+  <text x="80" y="820" class="code-key">annotation_id</text> <text x="220" y="820" class="text-s">stable across mutations</text>
+  <text x="80" y="836" class="code-key">sequence</text>      <text x="220" y="836" class="text-s">0=post · 1+=mutations</text>
+  <text x="80" y="852" class="code-key">event_type</text>    <text x="220" y="852" class="text-s">post · re-anchor ·</text>
+  <text x="220" y="868" class="text-s">  reclassify · propose-concept · delete</text>
+  <text x="80" y="888" class="code-key">concept_id</text>    <text x="220" y="888" class="text-s">current after this event</text>
+  <text x="80" y="904" class="code-key">value</text>         <text x="220" y="904" class="text-s">observed value (string)</text>
+  <text x="80" y="920" class="code-key">page</text>          <text x="220" y="920" class="text-s">1-indexed PDF page</text>
+  <text x="80" y="936" class="code-key">selector_json</text> <text x="220" y="936" class="text-s">TextQuoteSelector +</text>
+  <text x="220" y="952" class="text-s">  FragmentSelector when page known</text>
+  <text x="80" y="972" class="code-key">match_status</text>  <text x="220" y="972" class="text-s">matched · unmatched ·</text>
+  <text x="220" y="988" class="text-s">  reviewed · deleted</text>
+  <text x="80" y="1008" class="code-key">rationale, confidence, citation, creator, created</text>
+
+  <!-- Annotation lifecycle illustration -->
+  <rect x="510" y="752" width="910" height="280" fill="#1f1936" stroke="#3b2c5a" stroke-width="1" rx="4"/>
+  <text x="530" y="776" class="title-s">a single annotation across mutations · annotation_id = 2a11bef…b34f8a</text>
+  <line x1="530" y1="784" x2="1400" y2="784" class="divider"/>
+
+  <!-- seq=0 row -->
+  <rect x="530" y="800" width="870" height="84" fill="#101725" stroke="#1d3a5c" stroke-width="1" rx="3"/>
+  <rect x="530" y="800" width="80" height="84" fill="#1d3a5c" rx="3"/>
+  <text x="570" y="836" class="code" font-weight="700" text-anchor="middle" fill="#6db8ff">seq=0</text>
+  <text x="570" y="858" class="text-s" text-anchor="middle">POST</text>
+  <text x="624" y="822" class="text">written by extraction pipeline</text>
+  <text x="624" y="841" class="code">concept_id    KlassifiseringAvAnleggsmidlerAxis</text>
+  <text x="624" y="857" class="code">value         "Varige driftsmidler"</text>
+  <text x="624" y="873" class="code">match_status  unmatched     selector  ""</text>
+
+  <!-- seq=1 row -->
+  <rect x="530" y="894" width="870" height="120" fill="#171228" stroke="#5a3c1d" stroke-width="1" rx="3"/>
+  <rect x="530" y="894" width="80" height="120" fill="#5a3c1d" rx="3"/>
+  <text x="570" y="930" class="code" font-weight="700" text-anchor="middle" fill="#ffaa6b">seq=1</text>
+  <text x="570" y="952" class="text-s" text-anchor="middle">RE-ANCHOR</text>
+  <text x="570" y="968" class="text-s" text-anchor="middle">(LLM)</text>
+  <text x="624" y="916" class="text">appended by LLM analyst</text>
+  <text x="624" y="935" class="code">concept_id    KlassifiseringAvAnleggsmidlerAxis  <tspan fill="#98a1b3">(unchanged)</tspan></text>
+  <text x="624" y="951" class="code">value         "Varige driftsmidler"              <tspan fill="#98a1b3">(unchanged)</tspan></text>
+  <text x="624" y="967" class="code">match_status  reviewed</text>
+  <text x="624" y="983" class="code">selector      FragmentSelector page=1 + TextQuoteSelector</text>
+  <text x="624" y="999" class="code">rationale     "live validation roundtrip"   confidence  0.99</text>
+
+  <text x="530" y="1028" class="check">▲ seq=0 is BIT-IDENTICAL after seq=1 was appended.</text>
+  <text x="530" y="1043" class="text-s">  the original auto-extraction observation is never overwritten — naive empiricism preserved.</text>
+
+  <!-- arrow into shard -->
+  <path class="arrow" d="M 1090 600 L 1090 668"/>
+
+  <!-- ═════════════ STAGE 4 · QUERY-TIME COMPOSITION ═════════════ -->
+  <text x="40" y="1090" class="lane-label">④ stage 4  ·  current state composed at query time</text>
+
+  <rect class="panel" x="40" y="1110" width="700" height="170" rx="6"/>
+  <text x="60" y="1134" class="title">rn.AnalystSession.fetch_all(orgnr=, year=)</text>
+  <text x="60" y="1150" class="text-s">latest non-delete event per annotation_id</text>
+  <line x1="60" y1="1162" x2="720" y2="1162" class="divider"/>
+  <text x="60" y="1184" class="code-key">SELECT</text> <text x="120" y="1184" class="code">*</text>
+  <text x="60" y="1200" class="code-key">FROM</text>   <text x="120" y="1200" class="code">events</text>
+  <text x="60" y="1216" class="code-key">QUALIFY</text><text x="120" y="1216" class="code">ROW_NUMBER() OVER (PARTITION BY annotation_id ORDER BY sequence DESC) = 1</text>
+  <text x="60" y="1232" class="code-key">WHERE</text>  <text x="120" y="1232" class="code">event_type != 'delete'</text>
+  <text x="60" y="1264" class="text-num">73 active annotations · {matched:68, unmatched:3, reviewed:2}</text>
+
+  <rect class="panel" x="760" y="1110" width="680" height="170" rx="6"/>
+  <text x="780" y="1134" class="title">rn.AnalystSession.review_queue(orgnr=, year=)</text>
+  <text x="780" y="1150" class="text-s">same composition · filtered to match_status = 'unmatched'</text>
+  <line x1="780" y1="1162" x2="1420" y2="1162" class="divider"/>
+  <text x="780" y="1184" class="text">also available:</text>
+  <text x="780" y="1206" class="code-key">.history(orgnr=, year=)</text>      <text x="1010" y="1206" class="text-s">→ full immutable log (105 rows)</text>
+  <text x="780" y="1226" class="code-key">.proposed_concepts()</text>          <text x="1010" y="1226" class="text-s">→ all 'propose-concept' across shards</text>
+  <text x="780" y="1246" class="code-key">.stats(orgnr=, year=)</text>         <text x="1010" y="1246" class="text-s">→ event_type counts + match_status</text>
+  <text x="780" y="1266" class="text-num">original view: WHERE sequence = 0 (auditable extraction baseline)</text>
+
+  <!-- ═════════════ STAGE 5 · LLM ANALYST LOOP ═════════════ -->
+  <text x="40" y="1320" class="lane-label">⑤ stage 5  ·  llm analyst loop (closes the unmatched gap)</text>
+
+  <rect class="panel-llm" x="40" y="1340" width="1400" height="200" rx="6"/>
+  <text x="60" y="1366" class="step-num-llm">GEMINI 2.5 FLASH · vertex ai · europe-west1</text>
+  <text x="60" y="1386" class="text">for each unanchored annotation, the LLM receives the FULL source PDF + raw JSON + observation context</text>
+  <line x1="60" y1="1398" x2="1420" y2="1398" class="divider"/>
+
+  <text x="60" y="1422" class="code-key">for ann in</text>  <text x="160" y="1422" class="code">session.review_queue(orgnr=, year=):</text>
+  <text x="80" y="1442" class="code-key">raw  =</text>      <text x="160" y="1442" class="code">session.resolve_raw(ann["source"])      </text><text x="600" y="1442" class="text-s">urn → GCS → JSON dict</text>
+  <text x="80" y="1458" class="code-key">pdf  =</text>      <text x="160" y="1458" class="code">session.get_pdf_bytes(ann["source"])    </text><text x="600" y="1458" class="text-s">urn → GCS → PDF bytes (full doc inline to Gemini)</text>
+  <text x="80" y="1478" class="code-key">decision = </text> <text x="180" y="1478" class="code">gemini(system_prompt, user_text=ann_context, pdf=pdf_bytes)</text>
+  <text x="80" y="1498" class="code">→ {action, exact, prefix, suffix, page, rationale, confidence}</text>
+  <text x="80" y="1518" class="code-key">session.</text>   <text x="140" y="1518" class="code">{re_anchor, reclassify, propose_concept, delete}(ann, …)   </text><text x="700" y="1518" class="text-warn">→ appends seq=N+1 event</text>
+
+  <!-- arrow back to shard -->
+  <path class="arrow-loop" d="M 1090 1340 C 1200 1240, 1200 1100, 1200 1048"/>
+  <text x="1210" y="1240" class="text-s" fill="#ffaa6b">mutation</text>
+  <text x="1210" y="1254" class="text-s" fill="#ffaa6b">appended</text>
+
+  <!-- ═════════════ VALIDATION ═════════════ -->
+  <text x="40" y="1582" class="lane-label">⑥ validation  ·  end-to-end against orgnr 811722332 / fiscal year 2024</text>
+
+  <rect class="panel-val" x="40" y="1602" width="1400" height="78" rx="6"/>
+
+  <g transform="translate(60, 1622)">
+    <text x="0" y="0" class="check">✓</text> <text x="20" y="0" class="text-s">canonicalize 15 build_tables</text> <text x="20" y="14" class="text-num">152 obs / 62 concepts</text>
+  </g>
+  <g transform="translate(260, 1622)">
+    <text x="0" y="0" class="check">✓</text> <text x="20" y="0" class="text-s">build annotations</text> <text x="20" y="14" class="text-num">194 · 184 matched · 94.8%</text>
+  </g>
+  <g transform="translate(540, 1622)">
+    <text x="0" y="0" class="check">✓</text> <text x="20" y="0" class="text-s">post events</text> <text x="20" y="14" class="text-num">102 text events</text>
+  </g>
+  <g transform="translate(740, 1622)">
+    <text x="0" y="0" class="check">✓</text> <text x="20" y="0" class="text-s">idempotency</text> <text x="20" y="14" class="text-num">2nd push wrote 0</text>
+  </g>
+  <g transform="translate(920, 1622)">
+    <text x="0" y="0" class="check">✓</text> <text x="20" y="0" class="text-s">re-anchor</text> <text x="20" y="14" class="text-num">seq=1 + FragmentSelector</text>
+  </g>
+  <g transform="translate(1170, 1622)">
+    <text x="0" y="0" class="check">✓</text> <text x="20" y="0" class="text-s">naive empiricism</text> <text x="20" y="14" class="text-num">seq=0 bit-identical</text>
+  </g>
+  <g transform="translate(60, 1660)">
+    <text x="0" y="0" class="check">✓</text> <text x="20" y="0" class="text-s">reclassify</text> <text x="20" y="14" class="text-num">seq=1 with new concept_id</text>
+  </g>
+  <g transform="translate(260, 1660)">
+    <text x="0" y="0" class="check">✓</text> <text x="20" y="0" class="text-s">delete</text> <text x="20" y="14" class="text-num">drops from current_state</text>
+  </g>
+  <g transform="translate(440, 1660)">
+    <text x="0" y="0" class="check">✓</text> <text x="20" y="0" class="text-s">unit tests</text> <text x="20" y="14" class="text-num">53 passing · CI green</text>
+  </g>
+  <g transform="translate(640, 1660)">
+    <text x="0" y="0" class="text-s">artifacts:</text> <text x="80" y="0" class="code">gs://…/raw/regnskapnoter_validation/v0_6_0_validation.{py,txt}</text>
+  </g>
+</svg>
