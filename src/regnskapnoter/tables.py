@@ -107,13 +107,19 @@ def canonicalize(
         .set_index("build_table_column")["regnskap_no_concept_id"]
         .to_dict()
     )
-    value_cols = [c for c in df.columns if c not in id_columns]
+    actual_id_cols = [c for c in id_columns if c in df.columns]
+    value_cols = [c for c in df.columns if c not in actual_id_cols]
+    value_name = "value"
+    if value_name in df.columns and value_name in value_cols:
+        df = df.rename(columns={value_name: "_value_col"})
+        value_cols = [("_value_col" if c == value_name else c) for c in value_cols]
     long = df.melt(
-        id_vars=list(id_columns),
+        id_vars=actual_id_cols,
         value_vars=value_cols,
         var_name="build_table_column",
         value_name="value",
     )
+    long["build_table_column"] = long["build_table_column"].replace({"_value_col": "value"})
     long["concept_id"] = long["build_table_column"].map(table_map)
     if drop_unmapped:
         long = long[long["concept_id"].notna() & (long["concept_id"] != "")]

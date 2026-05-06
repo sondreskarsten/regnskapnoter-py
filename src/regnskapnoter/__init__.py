@@ -3,9 +3,11 @@
 Quick start:
     >>> import regnskapnoter as rn
     >>> rn.concepts()                       # 279 concept rows
-    >>> rn.frameworks()                     # framework membership: concept_id -> [§ N, NRS X, ...]
-    >>> rn.concepts_in_framework("§ 7-29")  # concepts under § 7-29 Skattekostnad
-    >>> rn.canonicalize(extracted_df)       # column-keyed -> concept-keyed observations
+    >>> rn.frameworks()                     # framework membership
+    >>> rn.concepts_in_framework("§ 7-29")
+    >>> rn.canonicalize(extracted_df, table="skatt_aaret")
+    >>> rn.build_annotations_with_urn(raw_json, observations)
+    >>> session = rn.AnalystSession(); session.review_queue(orgnr=..., year=...)
 """
 
 from regnskapnoter.analyst import AnalystSession, build_annotations_with_urn
@@ -20,19 +22,6 @@ from regnskapnoter.frameworks import (
     frameworks,
     list_frameworks,
 )
-from regnskapnoter.hypothesis import (
-    PROPOSED_CONCEPT_TAG,
-    REVIEW_TAG,
-    WRONG_CONCEPT_TAG,
-    delete_hypothesis,
-    from_hypothesis,
-    iter_review_queue,
-    proposed_concepts,
-    re_anchor,
-    review_queue,
-    to_hypothesis,
-    update_hypothesis,
-)
 from regnskapnoter.loader import (
     artifact_path,
     available_versions,
@@ -40,6 +29,12 @@ from regnskapnoter.loader import (
     load,
     set_version,
     version,
+)
+from regnskapnoter.store import (
+    GCSAnnotationStore,
+    annotations_to_post_events,
+    make_mutation_event,
+    next_sequence,
 )
 from regnskapnoter.tables import (
     axes,
@@ -61,14 +56,14 @@ from regnskapnoter.urn import (
     to_urn,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
+
 __all__ = [
-    "PROPOSED_CONCEPT_TAG",
-    "REVIEW_TAG",
-    "WRONG_CONCEPT_TAG",
     "AnalystSession",
+    "GCSAnnotationStore",
     "__version__",
     "annotations_to_jsonld",
+    "annotations_to_post_events",
     "artifact_path",
     "available_versions",
     "axes",
@@ -84,25 +79,19 @@ __all__ = [
     "concepts_in_framework",
     "coverage_report",
     "definitions",
-    "delete_hypothesis",
     "framework_for_concept",
     "frameworks",
-    "from_hypothesis",
-    "iter_review_queue",
     "labels",
     "list_frameworks",
     "load",
+    "make_mutation_event",
     "mappings",
+    "next_sequence",
     "parse_urn",
-    "proposed_concepts",
-    "re_anchor",
     "references",
-    "review_queue",
     "set_version",
     "to_gcs_path",
-    "to_hypothesis",
     "to_pdf_gcs_path",
     "to_urn",
-    "update_hypothesis",
     "version",
 ]

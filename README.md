@@ -89,35 +89,35 @@ jsonld_payload = rn.annotations_to_jsonld(annotations)
 ```
 
 
-## Hypothes.is integration (analyst review)
+## GCS-backed annotation store (LLM analyst loop)
 
-Push annotations to a Hypothes.is group for analyst review (especially unmatched
-ones and proposed-concept additions); pull analyst contributions back as a DataFrame.
+State is an append-only event log in GCS parquet — no third-party services. Every action (post, re-anchor, reclassify, propose-concept, delete) is an immutable observation; the current view is composed at query time from the latest non-delete event per `annotation_id`.
+
+Layout: `gs://{bucket}/{prefix}/{orgnr}/{year}/events.parquet` (default `sondre_brreg_data` / `annotations/noter`).
 
 ```python
 import regnskapnoter as rn
 
-# 1) Push annotations
-posted = rn.to_hypothesis(
-    annotations,                              # output of build_annotations()
-    group_id="abc123",                        # Hypothes.is group ID
-    api_token="<token from hypothes.is/account/developer>",
-    source_url_template=lambda r: f"https://viewer.example.com/{r['body_concept_id']}",
-)
+# Push initial annotations
+session = rn.AnalystSession()
+session.post_observations(annotations, orgnr="811722332", year=2024)
 
-# 2) Pull analyst contributions back
-contributions = rn.from_hypothesis(group_id="abc123", api_token="<token>")
-new_concepts  = rn.proposed_concepts(contributions)   # tag: proposed-concept
-needs_review  = rn.review_queue(contributions)        # tag: review-needed | review-wrong-concept
+# Iterate review queue (LLM analyst loop)
+for ann in session.review_queue(orgnr="811722332", year=2024):
+    raw = session.resolve_raw(ann["source"])
+    pdf = session.get_pdf_bytes(ann["source"])
+
+    decision = llm_decide(ann, raw, pdf)
+    if decision["action"] == "re-anchor":
+        session.re_anchor(ann, exact=..., prefix=..., suffix=..., page=...,
+                          rationale=..., confidence=...)
+    # ... reclassify, propose_concept, delete
+
+# Pull proposed concepts across all shards
+proposed = session.proposed_concepts()
 ```
 
-Analyst tags recognized:
-- `proposed-concept` → analyst proposes a new concept (feeds back to taxonomy maintainer)
-- `review-needed` → auto-attached to unmatched annotations; analyst can re-anchor
-- `review-wrong-concept` → analyst flags a misclassification
-
-Each pushed annotation carries `concept:<id>`, `value:<v>`, `note:<n>`, `page:<p>` tags
-so analysts can filter by framework / concept in the Hypothes.is UI.
+See [docs/llm-analyst-loop.md](docs/llm-analyst-loop.md) for the full guide including event schema, naive-empiricism property, and Cloud Run deployment.
 
 ## PDF FragmentSelector emission
 
@@ -137,7 +137,7 @@ PDF target annotations get a proper `FragmentSelector` with `page=N`:
 Falls back to `RangeSelector` when no page metadata is present (legacy raw JSON).
 
 
-## LLM analyst loop (no human UI)
+## LLM analyst loop
 
 For an end-to-end annotation review pipeline driven by an LLM analyst — no human UI, no Hypothes.is web rendering — see [docs/llm-analyst-loop.md](docs/llm-analyst-loop.md).
 

@@ -1,232 +1,158 @@
-"""High-level LLM analyst loop for noter annotation review.
+"""GCS-backed LLM analyst loop for noter annotation review.
 
-Designed for an LLM analyst (no human UI) that:
-1. Pulls annotations needing review from Hypothes.is
-2. Reads the underlying raw JSON / PDF directly from GCS
-3. Decides on a re-anchor (new TextQuoteSelector) or a re-classification
-4. Writes the decision back via PATCH
+Replaces the previous Hypothes.is-backed implementation. Naive empiricism is
+preserved: every action (post, re-anchor, reclassify, propose-concept, delete)
+is an immutable event row at its own timestamp. The current state of any
+annotation is composed at query time from the latest non-delete event.
+
+Storage:
+
+    gs://sondre_brreg_data/annotations/noter/{orgnr}/{year}/events.parquet
 
 Typical use:
 
     import regnskapnoter as rn
+    session = rn.AnalystSession()             # uses default GCS bucket/prefix
 
-    session = rn.AnalystSession(
-        group_id="abc123",
-        api_token=os.environ["HYPOTHESIS_TOKEN"],
-    )
+    # Push initial annotations for one filing
+    raw_json, observations = rn.cli._load_raw_and_observations("811722332", 2024)
+    annotations = rn.build_annotations_with_urn(raw_json, observations)
+    session.post_observations(annotations, orgnr="811722332", year=2024)
 
-    for ann in session.review_queue():
-        raw_json = session.resolve_raw(ann["uri"])
-        # LLM-side decision logic
-        decision = decide(raw_json, ann)
-        if decision.action == "re-anchor":
-            session.re_anchor(ann, exact=decision.exact, prefix=decision.prefix,
-                              suffix=decision.suffix, page=decision.page)
-        elif decision.action == "delete":
-            session.delete(ann)
-        elif decision.action == "propose-concept":
-            session.propose_concept(ann, new_concept_id=decision.concept_id,
-                                    rationale=decision.rationale)
+    # LLM analyst iterates the review queue
+    for ann in session.review_queue(orgnr="811722332", year=2024):
+        raw = session.resolve_raw(ann["source"])
+        decision = llm_decide(ann, raw)
+        if decision["action"] == "re-anchor":
+            session.re_anchor(ann, exact=..., prefix=..., suffix=..., page=...)
 """
 
 from __future__ import annotations
 
 import json
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 import pandas as pd
 
-from regnskapnoter import hypothesis as _h
-from regnskapnoter.urn import to_gcs_path, to_pdf_gcs_path, to_urn
+from regnskapnoter.store import (
+    GCSAnnotationStore,
+    annotations_to_post_events,
+    make_mutation_event,
+    next_sequence,
+)
+from regnskapnoter.urn import parse_urn, to_gcs_path, to_pdf_gcs_path, to_urn
+
+
+def _parse_source(source: str) -> tuple[str, int] | None:
+    """Parse a 'noter:{orgnr}:{year}' source string back to (orgnr, year)."""
+    if source.startswith("noter:"):
+        parts = source.split(":")
+        if len(parts) == 3:
+            try:
+                return parts[1], int(parts[2])
+            except ValueError:
+                return None
+    if source.startswith("urn:noter:"):
+        return parse_urn(source)
+    return None
 
 
 @dataclass
 class AnalystSession:
-    """Stateful session bundling group_id + api_token for the LLM analyst loop."""
+    """Stateful session for the LLM analyst loop, backed by GCS parquet."""
 
-    group_id: str
-    api_token: str
+    bucket: str = "sondre_brreg_data"
+    prefix: str = "annotations/noter"
     raw_bucket: str = "sondre_brreg_data"
     raw_prefix: str = "raw/noter_extraction_2025/raw"
     pdf_bucket: str = "brreg-regnskap"
+    creator: str = "llm-analyst"
+    store: GCSAnnotationStore = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.store = GCSAnnotationStore(bucket=self.bucket, prefix=self.prefix)
+
+    # ------------------------------------------------------------------ post
+    def post_observations(
+        self,
+        annotations: pd.DataFrame,
+        *,
+        orgnr: str,
+        year: int,
+        target_type_filter: str = "text",
+    ) -> int:
+        """Convert a build_annotations() DataFrame to seq=0 'post' events and
+        append them to the GCS shard for (orgnr, year). Returns rows added.
+        Idempotent: re-running with the same input is a no-op.
+        """
+        df = (
+            annotations[annotations["target_type"] == target_type_filter]
+            if target_type_filter
+            else annotations
+        )
+        events = annotations_to_post_events(df, orgnr=orgnr, year=year, creator=self.creator)
+        return self.store.append_events(events)
 
     # ------------------------------------------------------------------ pull
-    def review_queue(self, batch_size: int = 50) -> Iterable[dict]:
-        """Generator over annotations tagged review-needed."""
-        return _h.iter_review_queue(
-            group_id=self.group_id,
-            api_token=self.api_token,
-            batch_size=batch_size,
-            tag=_h.REVIEW_TAG,
-        )
+    def review_queue(self, *, orgnr: str, year: int) -> Iterable[dict]:
+        """Yield annotations whose current state is unmatched."""
+        df = self.store.review_queue(str(orgnr), int(year))
+        yield from df.to_dict(orient="records")
 
-    def proposed_concepts_queue(self, batch_size: int = 50) -> Iterable[dict]:
-        """Generator over annotations tagged proposed-concept."""
-        return _h.iter_review_queue(
-            group_id=self.group_id,
-            api_token=self.api_token,
-            batch_size=batch_size,
-            tag=_h.PROPOSED_CONCEPT_TAG,
-        )
+    def fetch_all(self, *, orgnr: str, year: int) -> pd.DataFrame:
+        """Return current state for one filing as a DataFrame."""
+        return self.store.current_state(str(orgnr), int(year))
 
-    def fetch_all(self, tag_filter: list[str] | None = None, limit: int = 1000) -> pd.DataFrame:
-        """Fetch all annotations as DataFrame (uses from_hypothesis under the hood)."""
-        return _h.from_hypothesis(
-            group_id=self.group_id,
-            api_token=self.api_token,
-            tag_filter=tag_filter,
-            limit=limit,
-        )
+    def history(self, *, orgnr: str, year: int) -> pd.DataFrame:
+        """Return the full immutable event log for one filing."""
+        return self.store.read_shard(str(orgnr), int(year))
 
-    # ------------------------------------------------------------------ resolve URN -> content
-    def resolve_raw(self, urn_or_uri: str) -> dict:
-        """Resolve a URN to the raw extraction JSON (dict). Lazy GCS read."""
+    def proposed_concepts(
+        self,
+        *,
+        orgnr_year_pairs: Iterable[tuple[str, int]] | None = None,
+    ) -> pd.DataFrame:
+        """Return all 'propose-concept' events across selected (or all) shards."""
+        return self.store.proposed_concepts(orgnr_year_pairs)
+
+    def stats(self, *, orgnr: str, year: int) -> dict:
+        return self.store.stats(str(orgnr), int(year))
+
+    # ------------------------------------------------------------------ resolve
+    def resolve_raw(self, urn_or_source: str) -> dict:
+        """Resolve a URN or source string to the raw extraction JSON dict."""
         from google.cloud import storage
 
-        gcs_path = (
-            to_gcs_path(
-                urn_or_uri,
-                bucket=self.raw_bucket,
-                prefix=self.raw_prefix,
-            )
-            if urn_or_uri.startswith("urn:noter:")
-            else urn_or_uri
-        )
-
-        if not gcs_path or not gcs_path.startswith("gs://"):
-            raise ValueError(f"Cannot resolve to GCS path: {urn_or_uri}")
+        # Allow either 'noter:{orgnr}:{year}' or full 'urn:noter:{orgnr}:{year}'
+        parsed = _parse_source(urn_or_source)
+        if parsed is None:
+            raise ValueError(f"Cannot parse source: {urn_or_source}")
+        orgnr, year = parsed
+        urn = to_urn(orgnr, year)
+        gcs_path = to_gcs_path(urn, bucket=self.raw_bucket, prefix=self.raw_prefix)
+        if not gcs_path:
+            raise ValueError(f"Cannot resolve URN to GCS path: {urn}")
         _, _, rest = gcs_path.partition("gs://")
         bucket_name, _, blob_name = rest.partition("/")
-        client = storage.Client()
-        b = client.bucket(bucket_name)
-        blob = b.blob(blob_name)
-        return json.loads(blob.download_as_bytes())
+        return json.loads(storage.Client().bucket(bucket_name).blob(blob_name).download_as_bytes())
 
-    def resolve_pdf_uri(self, urn: str) -> str | None:
-        """Return the canonical GCS URI of the source PDF for an annotation URN."""
-        return to_pdf_gcs_path(urn, bucket=self.pdf_bucket)
-
-    # ------------------------------------------------------------------ write
-    def re_anchor(
-        self,
-        annotation: dict | str,
-        *,
-        exact: str,
-        prefix: str = "",
-        suffix: str = "",
-        page: int | None = None,
-        new_concept_id: str | None = None,
-    ) -> dict:
-        """Re-anchor an annotation with a fresh TextQuoteSelector. Removes
-        review-needed tag automatically.
-
-        ``annotation`` may be the dict yielded by ``review_queue()`` or a raw
-        hypothesis_id string.
-        """
-        h_id = annotation["hypothesis_id"] if isinstance(annotation, dict) else annotation
-        urn = annotation.get("uri") if isinstance(annotation, dict) else None
-        pdf_uri = self.resolve_pdf_uri(urn) if urn and urn.startswith("urn:noter:") else None
-        return _h.re_anchor(
-            h_id,
-            api_token=self.api_token,
-            exact=exact,
-            prefix=prefix,
-            suffix=suffix,
-            page=page,
-            pdf_uri=pdf_uri,
-            new_concept_id=new_concept_id,
-        )
-
-    def reclassify(
-        self, annotation: dict | str, *, new_concept_id: str, rationale: str = ""
-    ) -> dict:
-        """Change the concept_id tag of an annotation. Adds review-wrong-concept
-        tag and the analyst rationale to the text body."""
-        h_id = annotation["hypothesis_id"] if isinstance(annotation, dict) else annotation
-        existing = self.fetch_one(h_id)
-        tags = [t for t in (existing.get("tags") or []) if not t.startswith("concept:")]
-        tags.append(f"concept:{new_concept_id}")
-        if _h.WRONG_CONCEPT_TAG not in tags:
-            tags.append(_h.WRONG_CONCEPT_TAG)
-        new_text = (existing.get("text") or "") + (
-            f"\n\n[reclassified by analyst] -> {new_concept_id}"
-            + (f"\nRationale: {rationale}" if rationale else "")
-        )
-        return _h.update_hypothesis(h_id, api_token=self.api_token, tags=tags, text=new_text)
-
-    def propose_concept(
-        self,
-        annotation: dict | str,
-        *,
-        new_concept_id: str,
-        rationale: str,
-        paragraph_citation: str = "",
-    ) -> dict:
-        """Tag an annotation with proposed-concept and stash the proposed id +
-        rationale + (optional) regnskapsloven/NRS citation into the body.
-        Output of the proposed-concepts queue feeds the taxonomy maintainer."""
-        h_id = annotation["hypothesis_id"] if isinstance(annotation, dict) else annotation
-        existing = self.fetch_one(h_id)
-        tags = list(existing.get("tags") or [])
-        if _h.PROPOSED_CONCEPT_TAG not in tags:
-            tags.append(_h.PROPOSED_CONCEPT_TAG)
-        if not any(t.startswith("proposed:") for t in tags):
-            tags.append(f"proposed:{new_concept_id}")
-        new_text = (existing.get("text") or "") + (
-            f"\n\n[proposed-concept] {new_concept_id}"
-            + (f"\nRationale: {rationale}" if rationale else "")
-            + (f"\nCitation: {paragraph_citation}" if paragraph_citation else "")
-        )
-        return _h.update_hypothesis(h_id, api_token=self.api_token, tags=tags, text=new_text)
-
-    def delete(self, annotation: dict | str) -> bool:
-        """Delete an annotation. Use when the LLM determines it was spurious."""
-        h_id = annotation["hypothesis_id"] if isinstance(annotation, dict) else annotation
-        return _h.delete_hypothesis(h_id, api_token=self.api_token)
-
-    # ------------------------------------------------------------------ utility
-    def fetch_one(self, hypothesis_id: str) -> dict:
-        """Fetch a single annotation by ID."""
-        import requests
-
-        r = requests.get(
-            f"{_h.API_BASE}/annotations/{hypothesis_id}",
-            headers=_h._headers(self.api_token),
-            timeout=15,
-        )
-        r.raise_for_status()
-        return r.json()
-
-    def download_pdf(self, urn: str, *, dest_path: str | None = None) -> str:
-        """Download the source PDF for a URN to a local file. Returns the local path.
-
-        If dest_path is None, writes to /tmp/{orgnr}_{year}.pdf.
-        """
-        from google.cloud import storage
-
-        from regnskapnoter.urn import find_pdf_in_gcs, parse_urn
-
-        parsed = parse_urn(urn)
+    def resolve_pdf_uri(self, urn_or_source: str) -> str | None:
+        parsed = _parse_source(urn_or_source)
         if parsed is None:
-            raise ValueError(f"Not a valid URN: {urn}")
-        orgnr, year = parsed
-        gcs_uri = find_pdf_in_gcs(urn, bucket=self.pdf_bucket)
-        if gcs_uri is None:
-            raise FileNotFoundError(f"No PDF found in GCS for {urn}")
+            return None
+        return to_pdf_gcs_path(to_urn(*parsed), bucket=self.pdf_bucket)
 
-        _, _, rest = gcs_uri.partition("gs://")
-        bucket_name, _, blob_name = rest.partition("/")
-        local = dest_path or f"/tmp/{orgnr}_{year}.pdf"
-        storage.Client().bucket(bucket_name).blob(blob_name).download_to_filename(local)
-        return local
-
-    def get_pdf_bytes(self, urn: str) -> bytes:
-        """Return the source PDF bytes for a URN. Used to feed the LLM analyst."""
+    def get_pdf_bytes(self, urn_or_source: str) -> bytes:
         from google.cloud import storage
 
         from regnskapnoter.urn import find_pdf_in_gcs
 
+        parsed = _parse_source(urn_or_source)
+        if parsed is None:
+            raise ValueError(f"Cannot parse source: {urn_or_source}")
+        urn = to_urn(*parsed)
         gcs_uri = find_pdf_in_gcs(urn, bucket=self.pdf_bucket)
         if gcs_uri is None:
             raise FileNotFoundError(f"No PDF found in GCS for {urn}")
@@ -234,35 +160,135 @@ class AnalystSession:
         bucket_name, _, blob_name = rest.partition("/")
         return storage.Client().bucket(bucket_name).blob(blob_name).download_as_bytes()
 
-    def post_observations(
+    # ------------------------------------------------------------------ mutations
+    def _append_mutation(
         self,
-        annotations_df: pd.DataFrame,
+        base: pd.Series,
         *,
-        target_type_filter: str = "text",
-    ) -> pd.DataFrame:
-        """Push a build_annotations()-shaped DataFrame to the group, with URN
-        URIs derived from the annotation_id metadata. Use when seeding a new
-        (orgnr, year) into the analyst loop."""
+        event_type: str,
+        new_concept_id: str | None = None,
+        new_selector_json: str | None = None,
+        new_page: int | None = None,
+        new_match_status: str | None = None,
+        rationale: str = "",
+        citation: str = "",
+        confidence: float | None = None,
+    ) -> dict[str, Any]:
+        """Read shard, compute next sequence for this annotation_id, append event."""
+        orgnr = str(base["orgnr"])
+        year = int(base["year"])
+        events = self.store.read_shard(orgnr, year)
+        seq = next_sequence(events, base["annotation_id"])
+        event = make_mutation_event(
+            base=base,
+            event_type=event_type,
+            sequence=seq,
+            new_concept_id=new_concept_id,
+            new_selector_json=new_selector_json,
+            new_page=new_page,
+            new_match_status=new_match_status,
+            rationale=rationale,
+            citation=citation,
+            confidence=confidence,
+            creator=self.creator,
+        )
+        new_events = pd.DataFrame([event])
+        self.store.append_events(new_events)
+        return event
 
-        def url_template(row: pd.Series) -> str:
-            ann_id = row.get("annotation_id", "")
-            urn_hint = row.get("source") or ""
-            if urn_hint.startswith("urn:noter:"):
-                return urn_hint
-            return urn_hint or f"urn:noter:unknown:{ann_id}"
-
-        return _h.to_hypothesis(
-            annotations_df,
-            group_id=self.group_id,
-            api_token=self.api_token,
-            source_url_template=url_template,
-            target_type_filter=target_type_filter,
+    def re_anchor(
+        self,
+        annotation: dict | pd.Series,
+        *,
+        exact: str,
+        prefix: str = "",
+        suffix: str = "",
+        page: int | None = None,
+        new_concept_id: str | None = None,
+        rationale: str = "",
+        confidence: float | None = None,
+    ) -> dict:
+        """Append a re-anchor event with a fresh TextQuoteSelector + optional FragmentSelector."""
+        base = annotation if isinstance(annotation, pd.Series) else pd.Series(annotation)
+        text_selector = {
+            "type": "TextQuoteSelector",
+            "exact": exact,
+            "prefix": prefix,
+            "suffix": suffix,
+        }
+        if page is not None:
+            selector = {
+                "type": "FragmentSelector",
+                "conformsTo": "http://tools.ietf.org/rfc/rfc3778",
+                "value": f"page={page}",
+                "refinedBy": text_selector,
+            }
+        else:
+            selector = text_selector
+        return self._append_mutation(
+            base,
+            event_type="re-anchor",
+            new_concept_id=new_concept_id,
+            new_selector_json=json.dumps(selector, ensure_ascii=False),
+            new_page=page,
+            new_match_status="reviewed",
+            rationale=rationale,
+            confidence=confidence,
         )
 
+    def reclassify(
+        self,
+        annotation: dict | pd.Series,
+        *,
+        new_concept_id: str,
+        rationale: str = "",
+        confidence: float | None = None,
+    ) -> dict:
+        base = annotation if isinstance(annotation, pd.Series) else pd.Series(annotation)
+        return self._append_mutation(
+            base,
+            event_type="reclassify",
+            new_concept_id=new_concept_id,
+            new_match_status="reviewed",
+            rationale=rationale,
+            confidence=confidence,
+        )
 
-# ---------------------------------------------------------------------------
-# Convenience: build a build_annotations() DataFrame already URN-tagged
-# ---------------------------------------------------------------------------
+    def propose_concept(
+        self,
+        annotation: dict | pd.Series,
+        *,
+        new_concept_id: str,
+        rationale: str,
+        paragraph_citation: str = "",
+        confidence: float | None = None,
+    ) -> dict:
+        base = annotation if isinstance(annotation, pd.Series) else pd.Series(annotation)
+        return self._append_mutation(
+            base,
+            event_type="propose-concept",
+            new_concept_id=new_concept_id,
+            new_match_status="reviewed",
+            rationale=rationale,
+            citation=paragraph_citation,
+            confidence=confidence,
+        )
+
+    def delete(
+        self,
+        annotation: dict | pd.Series,
+        *,
+        rationale: str = "",
+        confidence: float | None = None,
+    ) -> dict:
+        base = annotation if isinstance(annotation, pd.Series) else pd.Series(annotation)
+        return self._append_mutation(
+            base,
+            event_type="delete",
+            new_match_status="deleted",
+            rationale=rationale,
+            confidence=confidence,
+        )
 
 
 def build_annotations_with_urn(
@@ -272,16 +298,17 @@ def build_annotations_with_urn(
     pipeline_version: str = "noter-extraction-2025",
 ) -> pd.DataFrame:
     """Wrapper around build_annotations that sets source_text_uri to the URN
-    instead of a gs:// path. Lets to_hypothesis use the URN directly."""
+    and source_pdf_uri to the canonical PDF GCS path."""
     from regnskapnoter.annotations import build_annotations
 
     orgnr = str(raw_json.get("orgnr") or "")
     year = raw_json.get("year")
-    urn = to_urn(orgnr, year) if orgnr and year else None
+    text_uri = to_urn(orgnr, year) if orgnr and year else None
+    pdf_uri = to_pdf_gcs_path(text_uri) if text_uri else None
     return build_annotations(
         raw_json,
         observations,
-        source_text_uri=urn,
-        source_pdf_uri=urn,  # Hypothes.is treats this only as the target source string
+        source_text_uri=text_uri,
+        source_pdf_uri=pdf_uri,
         pipeline_version=pipeline_version,
     )

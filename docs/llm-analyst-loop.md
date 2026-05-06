@@ -1,17 +1,17 @@
-# LLM analyst loop — comprehensive guide
+# LLM analyst loop — GCS-backed annotation store
 
-This document specifies the end-to-end LLM-driven annotation review pipeline for regnskap noter. The "analyst" is an LLM (e.g. Claude or Gemini) — there is no human UI in the loop, no Hypothes.is web rendering, no Cloud Run viewer.
+End-to-end annotation review pipeline driven by an LLM analyst. Hypothes.is has been removed; state is now an append-only event log in GCS parquet. Naive empiricism is preserved: every action is an immutable observation at its own timestamp; the current state of any annotation is composed at query time from the latest non-delete event.
 
 ## Architecture
 
 ```
-                    ┌─────────────────────────────────────────┐
-                    │   noter-extraction (Cloud Run)          │
-                    │   PDF → raw JSON with [[p:N]] markers   │
-                    │   gs://sondre_brreg_data/raw/.../*.json │
-                    └────────────────┬────────────────────────┘
-                                     │
-                                     ▼
+        ┌─────────────────────────────────────────┐
+        │   noter-extraction (Cloud Run)          │
+        │   PDF → raw JSON with [[p:N]] markers   │
+        │   gs://sondre_brreg_data/raw/.../*.json │
+        └────────────────┬────────────────────────┘
+                         │
+                         ▼
             ┌──────────────────────────────────────┐
             │   noter-extraction-tidy-tables       │
             │   raw JSON → wide build_tables CSVs  │
@@ -29,152 +29,131 @@ This document specifies the end-to-end LLM-driven annotation review pipeline for
             │   regnskapnoter.build_annotations_with_urn │
             │   long observations + raw JSON →       │
             │     WADM annotations DataFrame         │
-            │     uri = urn:noter:{orgnr}:{year}     │
+            │     source = urn:noter:{orgnr}:{year}  │
             └────────────────┬───────────────────────┘
                              │
                              ▼
             ┌─────────────────────────────────────┐
             │   AnalystSession.post_observations  │
-            │   POST → Hypothes.is group          │
-            │   target.source = urn:noter:...     │
-            │   tags = [concept:..., value:...,   │
-            │           note:..., page:...,       │
-            │           review-needed?]           │
+            │   → seq=0 'post' events appended    │
+            │   to gs://sondre_brreg_data/        │
+            │      annotations/noter/{org}/{yr}/  │
+            │      events.parquet                 │
             └────────────────┬────────────────────┘
                              │
-                             │  ┌───────── LLM analyst loop ─────────┐
-                             ▼  │                                    │
-            ┌─────────────────────────────────────┐                  │
-            │   AnalystSession.review_queue()     │                  │
-            │   yields {hypothesis_id, uri,       │                  │
-            │           concept_id, value, tags}  │                  │
-            └────────────────┬────────────────────┘                  │
-                             │                                       │
-                             ▼                                       │
-            ┌─────────────────────────────────────┐                  │
-            │   session.resolve_raw(uri)          │                  │
-            │   urn → gs:// → JSON content        │                  │
-            └────────────────┬────────────────────┘                  │
-                             │                                       │
-                             ▼                                       │
-            ┌─────────────────────────────────────┐                  │
-            │   LLM decides:                      │                  │
-            │   - re-anchor with new selector     │                  │
-            │   - reclassify to different concept │                  │
-            │   - propose new concept             │                  │
-            │   - delete (spurious)               │                  │
-            └────────────────┬────────────────────┘                  │
-                             │                                       │
-                             ▼                                       │
-            ┌─────────────────────────────────────┐                  │
-            │   session.{re_anchor, reclassify,   │                  │
-            │            propose_concept, delete} │                  │
-            │   PATCH → Hypothes.is               │                  │
-            └────────────────┬────────────────────┘                  │
-                             │                                       │
-                             └───────────────────────────────────────┘
+                             │  ┌── LLM analyst loop ──┐
+                             ▼  │                       │
+            ┌─────────────────────────────────────┐    │
+            │   AnalystSession.review_queue()     │    │
+            │   yields current-state rows where   │    │
+            │   match_status = 'unmatched'        │    │
+            └────────────────┬────────────────────┘    │
+                             │                         │
+                             ▼                         │
+            ┌─────────────────────────────────────┐    │
+            │   session.resolve_raw(source)       │    │
+            │   urn → gs:// → JSON content        │    │
+            │   session.get_pdf_bytes(source)     │    │
+            └────────────────┬────────────────────┘    │
+                             │                         │
+                             ▼                         │
+            ┌─────────────────────────────────────┐    │
+            │   LLM (Gemini 2.5 Flash) decides    │    │
+            └────────────────┬────────────────────┘    │
+                             │                         │
+                             ▼                         │
+            ┌─────────────────────────────────────┐    │
+            │   session.{re_anchor, reclassify,   │    │
+            │            propose_concept, delete} │    │
+            │   → seq=N+1 mutation event appended │    │
+            └────────────────┬────────────────────┘    │
+                             │                         │
+                             └─────────────────────────┘
                              │
                              ▼
             ┌─────────────────────────────────────┐
             │   Taxonomy maintainer pulls         │
-            │   AnalystSession.fetch_all(         │
-            │     tag_filter=['proposed-concept'])│
+            │   AnalystSession.proposed_concepts()│
             │   → adds new concepts to taxonomy   │
             └─────────────────────────────────────┘
 ```
 
-## URI scheme
+## Event schema
 
-Hypothes.is requires every annotation to have a URI. Since no human will visit it, we use a stable URN that encodes the (orgnr, year) tuple:
+Every shard `gs://{bucket}/{prefix}/{orgnr}/{year}/events.parquet` is append-only with this schema:
 
-```
-urn:noter:{orgnr}:{year}
-```
+| column | type | description |
+|---|---|---|
+| `event_id` | string | sha256(annotation_id\|seq), primary key |
+| `annotation_id` | string | stable across mutations |
+| `sequence` | int32 | 0 = post, 1+ = mutations (monotonic per annotation_id) |
+| `event_type` | string | `post` / `re-anchor` / `reclassify` / `propose-concept` / `delete` |
+| `orgnr` | string | 9-digit |
+| `year` | int32 | fiscal year |
+| `concept_id` | string | regnskap-no concept (current after this event) |
+| `value` | string | observed value |
+| `note_number` | string | from raw extraction |
+| `note_title` | string | from raw extraction |
+| `page` | int32 | 1-indexed PDF page |
+| `selector_json` | string | TextQuoteSelector and/or FragmentSelector |
+| `target_type` | string | `text` / `pdf` |
+| `source` | string | `noter:{orgnr}:{year}` |
+| `match_status` | string | `matched` / `unmatched` / `reviewed` / `deleted` |
+| `rationale` | string | LLM reason (mutations only) |
+| `citation` | string | regnskapsloven/NRS citation (propose-concept only) |
+| `confidence` | float64 | LLM confidence 0..1 |
+| `creator` | string | `noter-extraction-2025` / `llm-analyst-{model}` / ... |
+| `created` | timestamp[us, UTC] | event timestamp |
 
-Example: `urn:noter:811722332:2024`
+**Idempotency:** `event_id` is the dedup key. Re-running `post_observations` is a no-op.
 
-The URN reverses cleanly to a GCS path:
-
-```python
-from regnskapnoter import to_urn, parse_urn, to_gcs_path, to_pdf_gcs_path
-
-to_urn("811722332", 2024)
-# 'urn:noter:811722332:2024'
-
-parse_urn("urn:noter:811722332:2024")
-# ('811722332', 2024)
-
-to_gcs_path("urn:noter:811722332:2024")
-# 'gs://sondre_brreg_data/raw/noter_extraction_2025/raw/811722332_aarsregnskap_2024_v2.json'
-
-to_pdf_gcs_path("urn:noter:811722332:2024")
-# 'gs://brreg-regnskap/811722332_aarsregnskap_2024.pdf'
-```
+**Naive empiricism:** the seq=0 'post' row is never modified. Mutations append seq=1, 2, … rows. To get the analyst-revised view, query: latest row per `annotation_id` where `event_type != 'delete'`. To get the original auto-extraction view, query rows where `sequence = 0`.
 
 ## Setup
 
-### 1. Get a Hypothes.is API token
-
-Visit https://hypothes.is/account/developer (free account, no review needed) and copy the token.
-
-### 2. Create a private group
-
-Visit https://hypothes.is/groups/new — name it e.g. `regnskap-noter-review`. The URL after creation contains the group ID:
-
-```
-https://hypothes.is/groups/{GROUP_ID}/regnskap-noter-review
-```
-
-### 3. Set environment variables
-
 ```bash
-export HYPOTHESIS_TOKEN=<your token>
-export HYPOTHESIS_GROUP=<group id>
+pip install 'regnskapnoter[gcs,llm]'
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json
+export GCP_PROJECT=sondreskarsten-d7d14
+export GCP_LOCATION=europe-west1
 ```
 
-### 4. Push annotations for one (orgnr, year)
+No Hypothes.is account or token needed. The default GCS bucket and prefix are `sondre_brreg_data` / `annotations/noter`; override via `AnalystSession(bucket=..., prefix=...)`.
+
+## Push annotations
 
 ```bash
 rn push --orgnr 811722332 --year 2024
-# stderr: raw: 10 notes; observations: 98
-# stderr: build_annotations: {"total": 105, "matched": 102, "unmatched": 3, "match_rate": 0.97}
-# stderr: posted: 105
+# raw: 10 notes; observations: 152
+# build_annotations: {"total": 194, "matched": 184, "unmatched": 10, "match_rate": 0.95}
+# events_written: 102
 ```
 
 Or programmatically:
 
 ```python
-import os
 import regnskapnoter as rn
 from regnskapnoter.cli import _load_raw_and_observations
 
 raw_json, observations = _load_raw_and_observations("811722332", 2024)
 annotations = rn.build_annotations_with_urn(raw_json, observations)
 
-session = rn.AnalystSession(
-    group_id=os.environ["HYPOTHESIS_GROUP"],
-    api_token=os.environ["HYPOTHESIS_TOKEN"],
-)
-session.post_observations(annotations)
+session = rn.AnalystSession()
+session.post_observations(annotations, orgnr="811722332", year=2024)
 ```
 
 ## LLM analyst loop
 
 ```python
-import os
 import regnskapnoter as rn
 
-session = rn.AnalystSession(
-    group_id=os.environ["HYPOTHESIS_GROUP"],
-    api_token=os.environ["HYPOTHESIS_TOKEN"],
-)
+session = rn.AnalystSession()
 
-for ann in session.review_queue(batch_size=20):
-    raw_json = session.resolve_raw(ann["uri"])
-    notes = raw_json.get("notes") or []
+for ann in session.review_queue(orgnr="811722332", year=2024):
+    raw = session.resolve_raw(ann["source"])         # urn → GCS → JSON
+    pdf = session.get_pdf_bytes(ann["source"])       # bytes for inline LLM input
 
-    # LLM: read the notes + the unanchored (concept_id, value) and decide
-    decision = llm_decide(ann, notes)
+    decision = llm_decide(ann, raw, pdf)             # see examples/llm_analyst.py
 
     if decision["action"] == "re-anchor":
         session.re_anchor(
@@ -183,12 +162,15 @@ for ann in session.review_queue(batch_size=20):
             prefix=decision["prefix"],
             suffix=decision["suffix"],
             page=decision.get("page"),
+            rationale=decision["rationale"],
+            confidence=decision["confidence"],
         )
     elif decision["action"] == "reclassify":
         session.reclassify(
             ann,
             new_concept_id=decision["new_concept_id"],
             rationale=decision["rationale"],
+            confidence=decision["confidence"],
         )
     elif decision["action"] == "propose-concept":
         session.propose_concept(
@@ -196,114 +178,61 @@ for ann in session.review_queue(batch_size=20):
             new_concept_id=decision["proposed_concept_id"],
             rationale=decision["rationale"],
             paragraph_citation=decision.get("citation", ""),
+            confidence=decision["confidence"],
         )
     elif decision["action"] == "delete":
-        session.delete(ann)
+        session.delete(ann, rationale=decision["rationale"], confidence=decision["confidence"])
 ```
 
-## LLM prompt template
+## Reference Gemini analyst
 
-A reasonable system prompt for the analyst LLM:
+`examples/llm_analyst.py` — Gemini 2.5 Flash via Vertex AI (`europe-west1`), `thinking_budget=0`, `temperature=0.0`, `response_mime_type=application/json`. Per-shard PDF + raw JSON caching. Confidence-gated dispatch (`MIN_CONFIDENCE=0.6` env).
 
-```
-You are an analyst reviewing automatically-extracted Norwegian financial-statement
-note values that the extractor failed to anchor to a text span. For each
-unanchored value:
-
-1. Read the raw note text.
-2. Find the literal substring in the note where this value appears.
-3. Decide one of:
-   (a) re-anchor: provide the exact substring + 32 chars of prefix/suffix
-       and the page number it falls on (if a [[p:N]] marker precedes it)
-   (b) reclassify: the concept_id is wrong; propose the correct one from
-       the regnskapnoter taxonomy
-   (c) propose-concept: the value is real but no taxonomy concept fits;
-       propose a new concept_id with a rationale and a regnskapsloven/NRS citation
-   (d) delete: the value is spurious (extraction artifact)
-
-Return JSON:
-{
-  "action": "re-anchor" | "reclassify" | "propose-concept" | "delete",
-  "exact": "...",       // required for re-anchor
-  "prefix": "...",      // required for re-anchor
-  "suffix": "...",      // required for re-anchor
-  "page": 5,            // required for re-anchor when [[p:N]] marker is upstream
-  "new_concept_id": "regnskap-no:...",          // for reclassify
-  "proposed_concept_id": "regnskap-no:NyttKonsept", // for propose-concept
-  "rationale": "...",   // for reclassify or propose-concept
-  "citation": "§ 7-XX" or "NRS X kap. Y"        // for propose-concept
-}
+```bash
+python examples/llm_analyst.py --orgnr 811722332 --year 2024 --max 50 --dry-run
+python examples/llm_analyst.py --orgnr 811722332 --year 2024 --max 50
+python examples/llm_analyst.py --all --max 100   # iterate every shard with unmatched
 ```
 
 ## Pulling analyst contributions
 
-The taxonomy maintainer periodically pulls proposed-concept annotations:
-
-```python
-proposed = session.fetch_all(tag_filter=[rn.PROPOSED_CONCEPT_TAG], limit=500)
-# Each row has: hypothesis_id, uri, tags, text, regnskapnoter_concept_id,
-#               is_proposed_concept (True), created, updated
+```bash
+rn proposed --format jsonl > proposed-concepts-$(date +%F).jsonl
 ```
 
-Or via CLI:
-
-```bash
-rn pull --tag proposed-concept --format jsonl > proposed-concepts-$(date +%F).jsonl
+```python
+session = rn.AnalystSession()
+proposed = session.proposed_concepts()  # all shards
+# columns: event_id, annotation_id, concept_id, value, citation, rationale,
+#          orgnr, year, created, ...
 ```
 
 ## Stats
 
 ```bash
-rn stats
+rn stats --orgnr 811722332 --year 2024
 # {
-#   "total": 1247,
-#   "review_needed": 38,
-#   "proposed_concept": 6,
-#   "wrong_concept": 12,
-#   "unique_concepts": 217,
-#   "unique_uris": 12
+#   "events_total": 105,
+#   "annotations_active": 73,
+#   "annotations_matched": 68,
+#   "annotations_unmatched": 3,
+#   "annotations_reviewed": 2,
+#   "events_by_type": {"post": 102, "re-anchor": 1, "reclassify": 1, "delete": 1},
+#   "concepts_unique": 44
 # }
 ```
 
----
+## Live validation
 
-## Reference LLM analyst (Gemini 2.5 Flash via Vertex AI)
+The pipeline has been validated end-to-end against orgnr 811722332 / 2024:
 
-A complete reference implementation at `examples/llm_analyst.py`. It feeds the LLM:
+- 152 observations canonicalized from 15 build_tables CSVs
+- 194 annotations built (95% match rate)
+- 102 text-target events posted (text-only filter)
+- Idempotency: second push wrote 0 events ✓
+- Re-anchor → seq=1 event appended; seq=0 'post' row bit-identical ✓
+- Reclassify → seq=1 event with new concept_id ✓
+- Delete → removed from current state; full history retained ✓
+- All shards enumerable via `list_shards()` ✓
 
-1. **The full source PDF** (`AnalystSession.get_pdf_bytes(urn)` — looks up the PDF by orgnr+year in `gs://brreg-regnskap` with prefix-scan fallback for non-canonical filenames).
-2. **The raw extraction JSON** (`AnalystSession.resolve_raw(urn)`) including all `[[p:N]]` page markers.
-3. **The unanchored observation** (`concept_id`, `value`, framework labels from `regnskapnoter.framework_for_concept`).
-
-The LLM returns a structured JSON decision; `_dispatch()` calls the appropriate `AnalystSession` method.
-
-### Run locally
-
-```bash
-pip install 'regnskapnoter[llm]'
-
-export HYPOTHESIS_TOKEN=...
-export HYPOTHESIS_GROUP=...
-export GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json
-export GCP_PROJECT=sondreskarsten-d7d14
-export GCP_LOCATION=europe-west1
-
-python examples/llm_analyst.py --max 50 --dry-run     # see decisions without dispatching
-python examples/llm_analyst.py --max 50               # dispatch decisions to Hypothes.is
-```
-
-### Cloud Run deployment
-
-`examples/Dockerfile` builds a runnable image; `examples/deploy.sh` deploys as a Cloud Run Job and schedules hourly execution. Secrets `hypothesis-token` and `hypothesis-group` must exist in Secret Manager.
-
-```bash
-bash examples/deploy.sh
-```
-
-### Confidence gating
-
-The `MIN_CONFIDENCE` env var (default 0.6) gates dispatch. Decisions below the threshold are logged as `skipped_low_confidence` and remain in the review queue for the next pass (or human review).
-
-### Caching
-
-The reference implementation caches PDF bytes and raw JSONs per URN within a single run, so a batch of 50 annotations from 5 distinct filings only fetches each PDF/JSON once. PDFs typically ~200KB-2MB; in-memory cache fine.
+Validation script + log: `gs://sondre_brreg_data/raw/regnskapnoter_validation/v0_6_0_validation.{py,txt}`

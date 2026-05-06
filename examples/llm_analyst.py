@@ -1,35 +1,31 @@
 """LLM analyst loop driven by Gemini 2.5 Flash via Vertex AI.
 
-Iterates the review queue, feeds the full source PDF + raw JSON + the unanchored
-(concept_id, value) to the LLM, parses the structured decision, dispatches to the
-appropriate AnalystSession method.
+Iterates the GCS-backed review queue for one (orgnr, year), feeds the full
+source PDF + raw JSON + the unanchored (concept_id, value) to the LLM, parses
+the structured decision, dispatches to the appropriate AnalystSession method.
+
+State is persisted as immutable events in
+gs://sondre_brreg_data/annotations/noter/{orgnr}/{year}/events.parquet —
+every action appends a new row; the original 'post' event is never modified.
 
 Usage:
 
-    python examples/llm_analyst.py --max 50
+    # Process a specific filing
+    python examples/llm_analyst.py --orgnr 811722332 --year 2024 --max 50
+
+    # Dry-run: print decisions, don't append events
+    python examples/llm_analyst.py --orgnr 811722332 --year 2024 --max 5 --dry-run
+
+    # Process all shards needing review
+    python examples/llm_analyst.py --all
 
 Environment:
 
-    HYPOTHESIS_TOKEN   - personal API token from hypothes.is/account/developer
-    HYPOTHESIS_GROUP   - group ID from hypothes.is/groups/...
-    GOOGLE_APPLICATION_CREDENTIALS - service account JSON for Vertex AI
-    GCP_PROJECT        - GCP project (default: sondreskarsten-d7d14)
-    GCP_LOCATION       - Vertex AI region (default: europe-west1)
-
-Decision JSON schema (LLM output):
-
-    {
-      "action": "re-anchor" | "reclassify" | "propose-concept" | "delete",
-      "exact": "1 100",                              # re-anchor only
-      "prefix": "Skattekostnad ",                    # re-anchor only
-      "suffix": "\\nResultat",                       # re-anchor only
-      "page": 5,                                     # re-anchor only (PDF page)
-      "new_concept_id": "regnskap-no:Skattekostnad", # reclassify only
-      "proposed_concept_id": "regnskap-no:NyttKonsept", # propose-concept only
-      "rationale": "...",                            # reclassify or propose
-      "citation": "§ 7-29 (3)",                      # propose only
-      "confidence": 0.0 - 1.0
-    }
+    GOOGLE_APPLICATION_CREDENTIALS - service account JSON for Vertex AI + GCS
+    GCP_PROJECT        - default: sondreskarsten-d7d14
+    GCP_LOCATION       - default: europe-west1
+    ANALYST_MODEL      - default: gemini-2.5-flash
+    MIN_CONFIDENCE     - default: 0.6
 """
 
 from __future__ import annotations
@@ -40,7 +36,6 @@ import logging
 import os
 import sys
 import time
-from typing import Any
 
 from google import genai
 from google.genai import types
@@ -62,34 +57,28 @@ SYSTEM_PROMPT = """You are an analyst reviewing automatically-extracted Norwegia
 financial-statement note values that the extractor failed to anchor to a text span.
 
 For each unanchored value, you receive:
-- The full source PDF of the årsregnskap (årsoppgjør / annual report).
-- The raw extracted JSON of the noter (notes section), including any [[p:N]]
-  page-break markers in note full_text.
+- The full source PDF of the årsregnskap.
+- The raw extracted JSON of the noter, including [[p:N]] page-break markers.
 - The unanchored observation: a (concept_id, value) tuple from the regnskapnoter
-  taxonomy (https://github.com/sondreskarsten/regnskapnoter-taxonomy) and the
-  framework labels for the concept.
+  taxonomy and the framework labels for the concept.
 
 Decide one of four actions:
 
-(a) re-anchor: the value IS in the document. Provide the literal substring as it
-    appears (preserving Norwegian thousands separators like '\\u00a0' or space,
-    parentheses for negatives, etc.) plus 32 characters of prefix/suffix. If the
-    raw JSON full_text has [[p:N]] markers upstream of the match, include the
-    page number. If the value appears only in the PDF (e.g. in a primary
-    statement table the noter extractor skipped), still emit re-anchor with the
-    PDF page number.
+(a) re-anchor: the value IS in the document. Provide the literal substring as
+    it appears (preserving Norwegian thousands separators like '\\u00a0' or
+    space, parentheses for negatives) plus 32 chars of prefix/suffix. Include
+    the page number if a [[p:N]] marker precedes it OR if the value is in the
+    PDF (e.g. in a primary statement table the noter extractor skipped).
 
-(b) reclassify: the value is in the document but assigned to the wrong concept_id.
-    Propose the correct concept_id from the taxonomy (must start with
-    'regnskap-no:'). Provide a rationale.
+(b) reclassify: the value is in the document but assigned to the wrong
+    concept_id. Propose the correct concept_id (must start with 'regnskap-no:').
 
-(c) propose-concept: the value is real, the concept does not exist in the
-    taxonomy, and a new concept should be added. Provide a CamelCase
-    proposed_concept_id, a rationale, and a regnskapsloven (e.g. '§ 7-XX (N)')
-    or NRS citation. The taxonomy maintainer will review.
+(c) propose-concept: the value is real, no taxonomy concept fits. Provide a
+    CamelCase proposed_concept_id, rationale, and a regnskapsloven (e.g.
+    '§ 7-XX (N)') or NRS citation.
 
 (d) delete: the value is spurious — extraction artifact, OCR garbage,
-    misattributed scaling factor, etc.
+    misattributed scaling factor.
 
 Return ONLY a JSON object matching this schema (no prose, no markdown):
 
@@ -106,30 +95,28 @@ Return ONLY a JSON object matching this schema (no prose, no markdown):
   "confidence": 0.0 - 1.0
 }
 
-Use null for fields not relevant to your action. Set confidence below 0.6 if you
-are uncertain; the system will skip low-confidence decisions for human review.
+Use null for fields not relevant to your action. Set confidence below 0.6 if
+uncertain; the system will skip low-confidence decisions for human review.
 """
 
 
 def _format_user_prompt(ann: dict, raw: dict) -> str:
     """Build the user-turn text describing one annotation needing review."""
-    framework_labels = []
     cid = ann.get("concept_id") or ""
-    if cid:
-        framework_labels = rn.framework_for_concept(cid)
+    framework_labels = rn.framework_for_concept(cid) if cid else []
     notes = raw.get("notes") or []
     notes_summary = "\n".join(
-        f"  Note {n.get('note_number', '?')} '{n.get('title', n.get('note_title', ''))}'"
+        f"  Note {n.get('note_number', '?')} '{n.get('title', '')}'"
         f" (pages {n.get('page_start', '?')}-{n.get('page_end', '?')})"
         for n in notes
         if isinstance(n, dict)
     )
     return f"""Unanchored observation:
-  concept_id   : {cid}
-  value        : {ann.get("value", "")}
-  frameworks   : {framework_labels}
-  hypothesis_id: {ann.get("hypothesis_id", "")}
-  uri          : {ann.get("uri", "")}
+  concept_id    : {cid}
+  value         : {ann.get("value", "")}
+  frameworks    : {framework_labels}
+  annotation_id : {ann.get("annotation_id", "")}
+  source        : {ann.get("source", "")}
 
 Raw extraction summary:
   orgnr        : {raw.get("orgnr", "")}
@@ -149,7 +136,7 @@ decision per the system prompt schema.
 """
 
 
-def _call_gemini(user_text: str, pdf_bytes: bytes) -> dict[str, Any]:
+def _call_gemini(user_text: str, pdf_bytes: bytes) -> dict:
     """Call Gemini with the system prompt + PDF + user-turn observation context."""
     response = CLIENT.models.generate_content(
         model=MODEL,
@@ -184,6 +171,8 @@ def _dispatch(session: rn.AnalystSession, ann: dict, decision: dict) -> str:
     if confidence < MIN_CONFIDENCE:
         return f"skipped_low_confidence({confidence:.2f})"
 
+    rationale = decision.get("rationale", "")
+
     if action == "re-anchor":
         session.re_anchor(
             ann,
@@ -191,6 +180,8 @@ def _dispatch(session: rn.AnalystSession, ann: dict, decision: dict) -> str:
             prefix=decision.get("prefix", ""),
             suffix=decision.get("suffix", ""),
             page=decision.get("page"),
+            rationale=rationale,
+            confidence=confidence,
         )
         return f"re-anchored(page={decision.get('page')})"
 
@@ -201,7 +192,8 @@ def _dispatch(session: rn.AnalystSession, ann: dict, decision: dict) -> str:
         session.reclassify(
             ann,
             new_concept_id=new_cid,
-            rationale=decision.get("rationale", ""),
+            rationale=rationale,
+            confidence=confidence,
         )
         return f"reclassified -> {new_cid}"
 
@@ -212,71 +204,54 @@ def _dispatch(session: rn.AnalystSession, ann: dict, decision: dict) -> str:
         session.propose_concept(
             ann,
             new_concept_id=proposed,
-            rationale=decision.get("rationale", ""),
+            rationale=rationale,
             paragraph_citation=decision.get("citation", ""),
+            confidence=confidence,
         )
         return f"proposed -> {proposed}"
 
     if action == "delete":
-        session.delete(ann)
+        session.delete(ann, rationale=rationale, confidence=confidence)
         return "deleted"
 
     return f"unknown_action({action!r})"
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="LLM analyst loop")
-    parser.add_argument("--max", type=int, default=50, help="Max annotations to process")
-    parser.add_argument("--batch-size", type=int, default=10)
-    parser.add_argument("--dry-run", action="store_true", help="Decide but don't dispatch")
-    args = parser.parse_args(argv)
-
-    group = os.environ.get("HYPOTHESIS_GROUP")
-    token = os.environ.get("HYPOTHESIS_TOKEN")
-    if not group or not token:
-        LOG.error("Set HYPOTHESIS_GROUP and HYPOTHESIS_TOKEN")
-        return 2
-
-    session = rn.AnalystSession(group_id=group, api_token=token)
-
-    pdf_cache: dict[str, bytes] = {}
-    raw_cache: dict[str, dict] = {}
-
-    processed = 0
+def _process_one_filing(
+    session: rn.AnalystSession, orgnr: str, year: int, max_anns: int, dry_run: bool
+) -> dict:
+    """Process unmatched annotations for one filing. Returns outcome counts."""
+    raw = None
+    pdf_bytes = None
     outcomes: dict[str, int] = {}
-    t0 = time.time()
+    processed = 0
 
-    for ann in session.review_queue(batch_size=args.batch_size):
-        if processed >= args.max:
+    for ann in session.review_queue(orgnr=orgnr, year=year):
+        if processed >= max_anns:
             break
-        urn = ann.get("uri") or ""
         try:
-            if urn not in raw_cache:
-                raw_cache[urn] = session.resolve_raw(urn)
-            raw = raw_cache[urn]
-            if urn not in pdf_cache:
-                pdf_cache[urn] = session.get_pdf_bytes(urn)
-            pdf_bytes = pdf_cache[urn]
+            if raw is None:
+                raw = session.resolve_raw(ann["source"])
+            if pdf_bytes is None:
+                pdf_bytes = session.get_pdf_bytes(ann["source"])
         except Exception as e:
-            LOG.warning("resolve_failed urn=%s err=%s", urn, e)
-            outcomes["resolve_failed"] = outcomes.get("resolve_failed", 0) + 1
-            processed += 1
-            continue
+            LOG.warning("resolve_failed orgnr=%s year=%s err=%s", orgnr, year, e)
+            return {"resolve_failed": 1}
 
         user_prompt = _format_user_prompt(ann, raw)
         try:
             decision = _call_gemini(user_prompt, pdf_bytes)
         except Exception as e:
-            LOG.error("llm_call_failed h_id=%s err=%s", ann.get("hypothesis_id"), e)
+            LOG.error("llm_call_failed ann_id=%s err=%s", ann.get("annotation_id"), e)
             outcomes["llm_call_failed"] = outcomes.get("llm_call_failed", 0) + 1
             processed += 1
             continue
 
-        if args.dry_run:
+        if dry_run:
             print(
                 json.dumps(
                     {
-                        "hypothesis_id": ann.get("hypothesis_id"),
+                        "annotation_id": ann.get("annotation_id"),
                         "concept_id": ann.get("concept_id"),
                         "value": ann.get("value"),
                         "decision": decision,
@@ -289,11 +264,11 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 outcome = _dispatch(session, ann, decision)
             except Exception as e:
-                LOG.error("dispatch_failed h_id=%s err=%s", ann.get("hypothesis_id"), e)
                 outcome = f"dispatch_error:{type(e).__name__}"
+                LOG.error("dispatch_failed ann_id=%s err=%s", ann.get("annotation_id"), e)
             LOG.info(
-                "h_id=%s concept=%s value=%s -> %s",
-                ann.get("hypothesis_id"),
+                "ann_id=%s concept=%s value=%s -> %s",
+                ann.get("annotation_id"),
                 ann.get("concept_id"),
                 ann.get("value"),
                 outcome,
@@ -303,9 +278,49 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         processed += 1
+    return outcomes
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="LLM analyst loop")
+    parser.add_argument("--orgnr", help="Process a single (orgnr, year) shard")
+    parser.add_argument("--year", type=int)
+    parser.add_argument(
+        "--all", action="store_true", help="Iterate every shard with unmatched annotations"
+    )
+    parser.add_argument("--max", type=int, default=50, help="Max annotations to process per shard")
+    parser.add_argument("--dry-run", action="store_true", help="Decide but don't append mutations")
+    args = parser.parse_args(argv)
+
+    session = rn.AnalystSession()
+    t0 = time.time()
+    total_outcomes: dict[str, int] = {}
+
+    if args.all:
+        shards = session.store.list_shards()
+        LOG.info("scanning %d shards", len(shards))
+        for orgnr, year in shards:
+            review = session.store.review_queue(orgnr, year)
+            if review.empty:
+                continue
+            LOG.info("processing orgnr=%s year=%s n_unmatched=%d", orgnr, year, len(review))
+            o = _process_one_filing(session, orgnr, year, args.max, args.dry_run)
+            for k, v in o.items():
+                total_outcomes[k] = total_outcomes.get(k, 0) + v
+    else:
+        if not (args.orgnr and args.year):
+            LOG.error("either --all or both --orgnr and --year required")
+            return 2
+        total_outcomes = _process_one_filing(
+            session,
+            args.orgnr,
+            args.year,
+            args.max,
+            args.dry_run,
+        )
 
     elapsed = time.time() - t0
-    LOG.info("processed=%d elapsed=%.1fs outcomes=%s", processed, elapsed, outcomes)
+    LOG.info("elapsed=%.1fs outcomes=%s", elapsed, total_outcomes)
     return 0
 
 
