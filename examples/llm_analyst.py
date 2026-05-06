@@ -271,7 +271,9 @@ def _process_one_filing(
             queue_cids = [cid] if cid else []
             try:
                 all_anns = list(session.review_queue(orgnr=orgnr, year=year))
-                queue_cids = list({a.get("concept_id", "") for a in all_anns if a.get("concept_id")})
+                queue_cids = list(
+                    {a.get("concept_id", "") for a in all_anns if a.get("concept_id")}
+                )
             except Exception:
                 pass
             if queue_cids:

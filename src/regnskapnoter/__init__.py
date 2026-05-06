@@ -30,6 +30,7 @@ from regnskapnoter.adapters import (
     from_text_pages,
 )
 from regnskapnoter.analyst import AnalystSession, build_annotations_with_urn
+from regnskapnoter.context import ConceptContext, build_observation_context
 from regnskapnoter.annotations import (
     annotations_to_jsonld,
     build_annotations,
@@ -104,6 +105,8 @@ __all__ = [
     "axis_members",
     "build_annotations",
     "build_annotations_with_urn",
+    "build_observation_context",
+    "ConceptContext",
     "build_tables_mapping",
     "calc_arcs",
     "canonicalize",

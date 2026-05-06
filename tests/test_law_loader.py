@@ -1,9 +1,8 @@
-"""Tests for regnskapnoter.law_loader."""
+"""Tests for regnskapnoter.law_loader (lovdata.no scraper)."""
 
 from __future__ import annotations
 
 import os
-import tempfile
 
 import pytest
 
@@ -13,27 +12,20 @@ from regnskapnoter.law_loader import (
     extract_paragraph,
     fetch_paragraph_text,
     resolve_law_id,
-    tag_for_fiscal_year,
 )
 
 
-def test_tag_for_fiscal_year():
-    assert tag_for_fiscal_year(2024) == "v2024"
-    assert tag_for_fiscal_year(1990) == "v2001"
-    assert tag_for_fiscal_year(2030) == "v2026"
-
-
 def test_resolve_law_id_known():
-    assert resolve_law_id("regnskapsloven") == "lov-1998-07-17-56"
-    assert resolve_law_id("aksjeloven") == "lov-1997-06-13-44"
+    assert resolve_law_id("regnskapsloven") == "lov/1998-07-17-56"
+    assert resolve_law_id("aksjeloven") == "lov/1997-06-13-44"
 
 
 def test_resolve_law_id_passthrough():
-    assert resolve_law_id("lov-2005-06-17-67") == "lov-2005-06-17-67"
+    assert resolve_law_id("lov/2005-06-17-67") == "lov/2005-06-17-67"
 
 
 def test_resolve_law_id_unknown():
-    with pytest.raises(ValueError, match="Unknown law name"):
+    with pytest.raises(ValueError, match="Unknown law"):
         resolve_law_id("nonexistent_law")
 
 
@@ -43,21 +35,35 @@ def test_normalize_paragraph_id():
     assert _normalize_paragraph_id("§ 3-5") == "3-5"
 
 
-def test_extract_paragraph_from_markdown():
-    md = """#### § 3-5. Signering
-
-(1) Foo bar baz.
-
-(2) Second paragraph.
-
-#### § 3-6. Konsernregnskap
-
-(1) Some text.
+MOCK_HTML = """
+<div data-id="PARAGRAF_3-5" class="morTag_p paragraf" id="PARAGRAF_3-5">
+<h4 class="paragrafHeader"><span class="paragrafhode">
+<span class="paragrafValue">§ 3-5.</span>
+<span class="paragrafTittel"><em>Signering av årsregnskapet</em></span>
+</span></h4>
+<table data-id="AVSNITT_1" class="numeral morTag_an avsnitt" style="width:100%">
+<tr><td><span class="avsnittNummer numeral">(1)</span> Foo bar baz.</td></tr>
+</table>
+<table data-id="AVSNITT_2" class="numeral morTag_an avsnitt" style="width:100%">
+<tr><td><span class="avsnittNummer numeral">(2)</span> Second paragraph.</td></tr>
+</table>
+</div>
+<a class="documentPart_scrollMargin" name="§3-6"></a>
+<div data-id="PARAGRAF_3-6" class="morTag_p paragraf" id="PARAGRAF_3-6">
+<h4 class="paragrafHeader"><span class="paragrafhode">
+<span class="paragrafValue">§ 3-6.</span>
+<span class="paragrafTittel"><em>Konsernregnskap</em></span>
+</span></h4>
+<table data-id="AVSNITT_1" class="numeral morTag_an avsnitt" style="width:100%">
+<tr><td><span class="avsnittNummer numeral">(1)</span> Some text.</td></tr>
+</table>
+</div>
+<a class="share-paragraf" href="#"></a>
 """
-    law = LawDocument(
-        law_id="test", tag="v2024", text=md,
-        sist_endret=None, ikrafttredelse=None,
-    )
+
+
+def test_extract_paragraph_from_html():
+    law = LawDocument(law_id="test", html=MOCK_HTML, sist_endret=None)
     result = extract_paragraph(law, "§ 3-5")
     assert result is not None
     assert "Signering" in result
@@ -66,36 +72,21 @@ def test_extract_paragraph_from_markdown():
 
 
 def test_extract_paragraph_not_found():
-    law = LawDocument(
-        law_id="test", tag="v2024", text="#### § 1-1. Only one\n\nText.",
-        sist_endret=None, ikrafttredelse=None,
-    )
+    law = LawDocument(law_id="test", html=MOCK_HTML, sist_endret=None)
     assert extract_paragraph(law, "§ 99-99") is None
 
 
 def test_extract_subparagraph():
-    md = """#### § 7-29. Andre forpliktelser
-
-(1) First sub.
-
-(2) Second sub about something.
-
-(3) Third sub detail.
-"""
-    law = LawDocument(
-        law_id="test", tag="v2024", text=md,
-        sist_endret=None, ikrafttredelse=None,
-    )
-    result = extract_paragraph(law, "§ 7-29 (2)")
+    law = LawDocument(law_id="test", html=MOCK_HTML, sist_endret=None)
+    result = extract_paragraph(law, "§ 3-5 (2)")
     assert result is not None
-    assert "Second sub" in result
-    assert "Third sub" not in result
+    assert "Second paragraph" in result
 
 
 def test_fetch_paragraph_text_non_stortinget():
-    text, tag = fetch_paragraph_text("NRS", "NRS 9", "punkt 4", 2024)
+    text, src = fetch_paragraph_text("NRS", "NRS 9", "punkt 4", 2024)
     assert text is None
-    assert tag is None
+    assert src is None
 
 
 @pytest.mark.skipif(
@@ -103,18 +94,18 @@ def test_fetch_paragraph_text_non_stortinget():
     reason="live tests disabled; set RN_LIVE_TESTS=1",
 )
 def test_fetch_law_live():
-    """Live test against norwegian-laws repo (network required)."""
+    import tempfile
+
     from regnskapnoter.law_loader import fetch_law
 
     with tempfile.TemporaryDirectory() as tmpdir:
         os.environ["REGNSKAPNOTER_LAW_CACHE"] = tmpdir
         try:
-            law = fetch_law("regnskapsloven", 2024)
-            assert law.law_id == "lov-1998-07-17-56"
-            assert law.tag == "v2024"
-            assert len(law.text) > 10000
-            p = extract_paragraph(law, "§ 3-5")
+            law = fetch_law("regnskapsloven")
+            assert law.law_id == "lov/1998-07-17-56"
+            assert len(law.html) > 100000
+            p = extract_paragraph(law, "§ 7-29")
             assert p is not None
-            assert "Signering" in p
+            assert "Andre forpliktelser" in p
         finally:
             del os.environ["REGNSKAPNOTER_LAW_CACHE"]

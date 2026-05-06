@@ -2,20 +2,25 @@
 
 Given a set of concept_ids (from annotations), this module loads the relevant
 slices of definitions, calc_arcs, labels, and references from the taxonomy,
-then formats them into a compact text block the LLM can use to ground its
-reclassify / propose-concept / re-anchor / delete decisions.
+resolves legal references to actual paragraph text from lovdata.no, then
+formats them into a compact text block the LLM can use to ground its decisions.
 
-Design: 100% coverage of taxonomy concepts, no upstream dependency.
+Design: 100% coverage of taxonomy concepts, no upstream dependency (law text
+comes directly from lovdata.no, not from the norwegian-laws repo).
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 import pyarrow.parquet as pq
 
+from regnskapnoter.law_loader import fetch_paragraph_text_with_chapter_fallback
 from regnskapnoter.loader import _fetch
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -26,7 +31,7 @@ class ConceptContext:
     definition: str | None
     calc_parent: str | None
     calc_siblings: list[str]
-    references: list[str]
+    references: list[dict]
 
 
 def _load_table(version: str, name: str):
@@ -37,11 +42,9 @@ def _load_table(version: str, name: str):
 def load_concept_contexts(
     concept_ids: Sequence[str],
     version: str = "latest",
+    fiscal_year: int = 2024,
+    resolve_law_text: bool = True,
 ) -> dict[str, ConceptContext]:
-    """Load taxonomy context for a batch of concept_ids.
-
-    Returns a dict keyed by concept_id.
-    """
     labels = _load_table(version, "labels")
     defs = _load_table(version, "definitions")
     arcs = _load_table(version, "calc_arcs")
@@ -58,7 +61,7 @@ def load_concept_contexts(
         )["text"]
     )
 
-    def_text = {}
+    def_text: dict[str, str] = {}
     for _, row in defs[defs["lang"] == "nb"].iterrows():
         cid = row["concept_id"]
         if cid not in def_text:
@@ -67,23 +70,39 @@ def load_concept_contexts(
     parent_map: dict[str, str] = {}
     siblings_map: dict[str, list[str]] = {}
     for _, row in arcs.iterrows():
-        child = row["child_id"]
-        parent = row["parent_id"]
-        parent_map[child] = parent
-
+        parent_map[row["child_id"]] = row["parent_id"]
     for _, row in arcs.iterrows():
         parent = row["parent_id"]
         children = arcs[arcs["parent_id"] == parent]["child_id"].tolist()
         for ch in children:
             siblings_map[ch] = [c for c in children if c != ch]
 
-    ref_map: dict[str, list[str]] = {}
+    ref_map: dict[str, list[dict]] = {}
     for _, row in refs.iterrows():
         cid = row["subject_id"]
-        parts = [row.get("publisher", ""), row.get("document", ""), row.get("paragraph", "")]
-        ref_str = " ".join(str(p) for p in parts if p and str(p) != "nan").strip()
-        if ref_str:
-            ref_map.setdefault(cid, []).append(ref_str)
+        publisher = str(row.get("publisher", ""))
+        document = str(row.get("document", ""))
+        paragraph = str(row.get("paragraph", ""))
+        if publisher == "nan":
+            continue
+        entry = {
+            "publisher": publisher,
+            "document": document,
+            "paragraph": paragraph,
+            "citation": f"{publisher} {document} {paragraph}".strip(),
+            "text": None,
+            "source": None,
+        }
+        if resolve_law_text and publisher == "Stortinget":
+            try:
+                text, source = fetch_paragraph_text_with_chapter_fallback(
+                    publisher, document, paragraph, fiscal_year
+                )
+                entry["text"] = text
+                entry["source"] = source
+            except Exception as e:
+                LOG.debug("law_text_fetch_failed %s %s: %s", document, paragraph, e)
+        ref_map.setdefault(cid, []).append(entry)
 
     result = {}
     for cid in concept_ids:
@@ -101,9 +120,8 @@ def load_concept_contexts(
 
 def format_context_block(
     contexts: dict[str, ConceptContext],
-    max_chars: int = 12000,
+    max_chars: int = 24000,
 ) -> str:
-    """Format concept contexts into a compact text block for LLM injection."""
     lines = ["<taxonomy_context>"]
     budget = max_chars - 40
 
@@ -116,8 +134,8 @@ def format_context_block(
             trunc = ctx.definition[:500] + "…" if len(ctx.definition) > 500 else ctx.definition
             entry.append(f"Definition: {trunc}")
         if ctx.calc_parent:
-            parent_label = contexts.get(ctx.calc_parent)
-            plbl = parent_label.label_nb if parent_label else ctx.calc_parent.split(":")[-1]
+            parent_ctx = contexts.get(ctx.calc_parent)
+            plbl = parent_ctx.label_nb if parent_ctx else ctx.calc_parent.split(":")[-1]
             entry.append(f"Parent: {plbl}")
         if ctx.calc_siblings:
             sib_labels = []
@@ -125,8 +143,15 @@ def format_context_block(
                 sc = contexts.get(s)
                 sib_labels.append(sc.label_nb if sc else s.split(":")[-1])
             entry.append(f"Siblings: {', '.join(sib_labels)}")
-        if ctx.references:
-            entry.append(f"Legal refs: {'; '.join(ctx.references[:4])}")
+
+        for ref in ctx.references[:3]:
+            if ref.get("text"):
+                text = ref["text"]
+                if len(text) > 600:
+                    text = text[:600] + "…"
+                entry.append(f"Legal ({ref['citation']}):\n{text}")
+            else:
+                entry.append(f"Legal ref: {ref['citation']}")
 
         block = "\n".join(entry)
         if len("\n".join(lines)) + len(block) + 2 > budget:
