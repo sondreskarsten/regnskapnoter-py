@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.7.1] - 2026-05-06 — Calibration tooling for MIN_CONFIDENCE
+
+### Added
+
+- `examples/calibration/calibrate.py`: two-stage CLI for calibrating the
+  `MIN_CONFIDENCE` threshold against labelled samples.
+  - `sample`: read N unmatched annotations from `review_queue`, ask Gemini for
+    decisions, write a labelling worksheet (JSONL or CSV, local or `gs://`).
+    Does NOT mutate the production event log.
+  - `score`: read the labelled worksheet, print precision per confidence band,
+    cumulative precision at threshold, and per-action breakdown. Recommends
+    a threshold based on operator-stated precision tolerance.
+- `examples/calibration/CALIBRATION.md`: comprehensive handoff guide with
+  prerequisites, reviewer decision rules, recalibration cadence, troubleshooting,
+  and cost ballpark. Suitable for handing to a credit analyst with no
+  knowledge of the codebase.
+
+### Tests
+
+- `tests/test_calibration.py`: 5 tests covering score-stage math
+  (perfect-precision case, threshold monotonicity, per-action breakdown,
+  skip-row exclusion, unlabelled-row warning). Subprocess-driven against the
+  real script.
+- 74 total passing.
+
 ## [0.7.0] - 2026-05-06 — Universal OCR text input
 
 ### Added

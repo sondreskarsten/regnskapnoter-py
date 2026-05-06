@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1680 2050" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace">
+  <defs>
+    <style><![CDATA[
+      .bg          { fill: #0f1115; }
+      .panel       { fill: #161a22; stroke: #2a3142; stroke-width: 1; }
+      .panel-input { fill: #11202b; stroke: #1d4861; stroke-width: 1; }
+      .panel-ocr   { fill: #102218; stroke: #1d5a3d; stroke-width: 1; }
+      .panel-ext   { fill: #1c1430; stroke: #4a3782; stroke-width: 1; }
+      .panel-ann   { fill: #2a1a13; stroke: #7a4a2a; stroke-width: 1; }
+      .panel-llm   { fill: #2a1a13; stroke: #7a4a2a; stroke-width: 1; }
+      .panel-store { fill: #1c1430; stroke: #4a3782; stroke-width: 1; }
+
+      /* Gray = missing / not yet built */
+      .panel-missing { fill: #1a1a1a; stroke: #444; stroke-width: 1; stroke-dasharray: 4 3; }
+      .panel-partial { fill: #1c1c12; stroke: #6a6020; stroke-width: 1; stroke-dasharray: 4 3; }
+
+      .lane-label  { font-family: "IBM Plex Sans", system-ui, sans-serif; font-weight: 600; fill: #d4d8e0; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
+      .stage-num   { fill: #6db8ff; font-weight: 700; font-size: 11px; letter-spacing: 0.05em; }
+      .title       { fill: #f0f2f6; font-weight: 700; font-size: 13px; }
+      .title-s     { fill: #f0f2f6; font-weight: 600; font-size: 12px; }
+      .title-missing { fill: #888; font-weight: 700; font-size: 13px; }
+      .title-s-missing { fill: #888; font-weight: 600; font-size: 12px; }
+      .text        { fill: #c8ccd5; font-size: 10.5px; }
+      .text-s      { fill: #98a1b3; font-size: 10px; }
+      .text-missing { fill: #777; font-size: 10.5px; }
+      .text-s-missing { fill: #666; font-size: 10px; }
+      .text-num    { fill: #6dd9a3; font-weight: 600; font-size: 10.5px; }
+      .text-warn   { fill: #ffaa6b; font-weight: 600; font-size: 10.5px; }
+      .text-amber  { fill: #ffd28d; font-weight: 600; font-size: 10.5px; }
+      .accent      { fill: #6db8ff; font-weight: 600; font-size: 10.5px; }
+      .gcs         { fill: #4285f4; font-weight: 600; font-size: 9.5px; }
+      .check       { fill: #6dd9a3; font-weight: 700; font-size: 11px; }
+      .cross       { fill: #888; font-weight: 700; font-size: 11px; }
+
+      .arrow       { stroke: #4a5566; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+      .arrow-mute  { stroke: #3a3a3a; stroke-width: 1.2; fill: none; stroke-dasharray: 4 3; marker-end: url(#arrow-mute); }
+      .arrow-loop  { stroke: #ffaa6b; stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; marker-end: url(#arrow-loop); }
+      .arrow-thick { stroke: #6dd9a3; stroke-width: 2; fill: none; marker-end: url(#arrow-thick); }
+
+      .code        { font-family: "JetBrains Mono", ui-monospace, monospace; fill: #d4d8e0; font-size: 10px; }
+      .code-key    { fill: #6db8ff; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px; }
+      .code-mute   { fill: #777; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px; }
+      .divider     { stroke: #2a3142; stroke-width: 1; }
+      .divider-mute { stroke: #2a2a2a; stroke-width: 1; stroke-dasharray: 3 2; }
+
+      .legend-text { fill: #c8ccd5; font-size: 11px; }
+    ]]></style>
+
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4a5566"/>
+    </marker>
+    <marker id="arrow-mute" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3a3a3a"/>
+    </marker>
+    <marker id="arrow-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ffaa6b"/>
+    </marker>
+    <marker id="arrow-thick" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6dd9a3"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1680" height="2050"/>
+
+  <!-- ─── Header ─── -->
+  <text x="40" y="44" class="title" font-size="22">Regnskapsnoter — production architecture</text>
+  <text x="40" y="68" class="text-s" font-size="13">data flow from raw PDF to analyst-reviewed concept observations · gray = missing, amber = partial, dark blocks = built</text>
+  <line x1="40" y1="84" x2="1640" y2="84" class="divider"/>
+
+  <!-- Legend -->
+  <g transform="translate(1100, 30)">
+    <rect x="0" y="0" width="14" height="14" class="panel-store" rx="2"/>
+    <text x="22" y="11" class="legend-text">built</text>
+    <rect x="80" y="0" width="14" height="14" class="panel-partial" rx="2"/>
+    <text x="102" y="11" class="legend-text">partial</text>
+    <rect x="170" y="0" width="14" height="14" class="panel-missing" rx="2"/>
+    <text x="192" y="11" class="legend-text">missing</text>
+    <rect x="270" y="0" width="14" height="14" class="panel-input" rx="2"/>
+    <text x="292" y="11" class="legend-text">input</text>
+    <rect x="350" y="0" width="14" height="14" class="panel-ocr" rx="2"/>
+    <text x="372" y="11" class="legend-text">OCR</text>
+    <rect x="430" y="0" width="14" height="14" class="panel-llm" rx="2"/>
+    <text x="452" y="11" class="legend-text">LLM</text>
+  </g>
+
+  <!-- ═════════════ STAGE 1 · INGESTION ═════════════ -->
+  <text x="40" y="118" class="lane-label">① ingestion · brreg-regnskap pipeline (built)</text>
+
+  <rect class="panel-input" x="40" y="138" width="780" height="180" rx="6"/>
+  <text x="60" y="162" class="stage-num">SOURCE PDFs · ~12,879 årsregnskap (2024)</text>
+  <text x="60" y="184" class="title-s">brreg-regnskap pipeline (Cloud Run Job, europe-north1)</text>
+  <line x1="60" y1="196" x2="800" y2="196" class="divider"/>
+  <text x="60" y="216" class="text">downloads BRREG public årsregnskap PDFs by orgnr+year</text>
+  <text x="60" y="232" class="text-s">page_classifier.build_manifest() — split BRREG (1728px) vs company (1653px) pages</text>
+  <text x="60" y="248" class="text-s">positional types: p1=generell_info, p2=resultatregnskap, p3=balanse, ... noter</text>
+  <text x="60" y="270" class="gcs">gs://brreg-regnskap/regnskap/{orgnr}/aarsregnskap_{year}.pdf</text>
+  <text x="60" y="286" class="text-num">12,879 PDFs available for downstream pipelines</text>
+  <text x="60" y="304" class="text-amber">(shards 0–1 active in production; shards 2–9 paused post-Easter)</text>
+
+  <!-- Multi-DGP framing -->
+  <rect class="panel" x="840" y="138" width="800" height="180" rx="6"/>
+  <text x="860" y="162" class="stage-num">MULTI-DGP PRINCIPLE · core to the design</text>
+  <text x="860" y="184" class="title-s">each producer = separate DGP-aspect of the same document</text>
+  <line x1="860" y1="196" x2="1620" y2="196" class="divider"/>
+  <text x="860" y="216" class="text">Naive empiricism rejects cross-source unification at write time.</text>
+  <text x="860" y="234" class="text-s">Each engine produces its own observation ledger. Voting happens at query time.</text>
+  <text x="860" y="252" class="text-s">For OCR: 7-voter cascade (ocr-cascade-eval @ ffe4d35) treats every engine's output</text>
+  <text x="860" y="268" class="text-s">as an independent DGP. <tspan class="text-num">81/100 unanimous · 99/100 reliable (≥7/10) · 0 universal-miss</tspan></text>
+  <text x="860" y="294" class="accent">implication for regnskapnoter-py: store creator on every annotation event;</text>
+  <text x="860" y="310" class="accent">cross-engine voting is a query-time operation on the event log.</text>
+
+  <!-- ═════════════ STAGE 2 · TEXT EXTRACTION (3 PARALLEL DGPs) ═════════════ -->
+  <text x="40" y="354" class="lane-label">② text extraction · 3 producers (multi-DGP) — only path A is in regular production</text>
+
+  <!-- Path A: Gemini-on-PDF (current production) -->
+  <rect class="panel-ext" x="40" y="374" width="520" height="220" rx="6"/>
+  <text x="60" y="398" class="stage-num">PATH A · gemini-on-pdf (PRODUCTION)</text>
+  <text x="60" y="420" class="title-s">noter-extraction Cloud Run Job</text>
+  <line x1="60" y1="432" x2="540" y2="432" class="divider"/>
+  <text x="60" y="452" class="text">repo: <tspan class="code">brreg-regnskap</tspan> · prompt <tspan class="code">NOTER_PROMPT_V3</tspan></text>
+  <text x="60" y="468" class="text-s">Gemini 2.5 Flash · vertex europe-west1 · thinking_budget=0</text>
+  <text x="60" y="484" class="text-s">~$0.001/entity for combined BRREG-tables + per-entity notes</text>
+  <text x="60" y="500" class="text-s">page-tracked [[p:N]] markers + page_start/page_end</text>
+  <text x="60" y="516" class="gcs">→ gs://sondre_brreg_data/raw/noter_extraction_2025/raw/</text>
+  <text x="60" y="530" class="gcs">    {orgnr}_aarsregnskap_{year}_v2.json</text>
+  <text x="60" y="552" class="text-num">12,860 / 12,879 PDFs extracted (~99.9%)</text>
+  <text x="60" y="568" class="text-warn">cost: ~$13 for full corpus · 4× cheaper than full-PDF baseline</text>
+  <text x="60" y="586" class="text-amber">PROD STATUS: shards 0–1 daily; 2–9 paused</text>
+
+  <!-- Path B: OCR cascade -->
+  <rect class="panel-ocr" x="580" y="374" width="520" height="220" rx="6"/>
+  <text x="600" y="398" class="stage-num">PATH B · ocr cascade (BENCHMARKED)</text>
+  <text x="600" y="420" class="title-s">7-voter cascade · ocr-cascade-eval @ ffe4d35</text>
+  <line x1="600" y1="432" x2="1080" y2="432" class="divider"/>
+  <text x="600" y="452" class="text">primary OCR <tspan class="code">ocrmypdf</tspan> · column-drop sentry <tspan class="code">tesseract_tsv</tspan></text>
+  <text x="600" y="468" class="text-s">redundancy: paddleocr · doctr · easyocr · tesseract · nougat</text>
+  <text x="600" y="486" class="text-warn">drop: doctr_bbox · ocrmypdf_hocr · paddleocr_conf (row-cluster brittle)</text>
+  <text x="600" y="506" class="gcs">→ gs://sondre_brreg_data/raw/ocr_bench_11k/{engine}/{orgnr}.json</text>
+  <text x="600" y="525" class="text-s">currently observed engines: tesseract · easyocr · docling · marker · donut · pix2struct</text>
+  <text x="600" y="544" class="text-num">live-validated: tesseract → 89.2% match rate vs Gemini 90.2% (1 concept gap)</text>
+  <text x="600" y="562" class="text-num">live-validated: easyocr → 87.3% match rate</text>
+  <text x="600" y="586" class="text-amber">PROD STATUS: benchmark complete; not yet wired into a daily job</text>
+
+  <!-- Path C: Docling -->
+  <rect class="panel-missing" x="1120" y="374" width="520" height="220" rx="6"/>
+  <text x="1140" y="398" class="stage-num" fill="#666">PATH C · docling (PROPOSED)</text>
+  <text x="1140" y="420" class="title-s-missing">docling-cascade-ocr plugin · structured layout</text>
+  <line x1="1140" y1="432" x2="1620" y2="432" class="divider-mute"/>
+  <text x="1140" y="452" class="text-missing">subclass docling BaseOcrModel; wrap 7 cascade voters as one OCR backend</text>
+  <text x="1140" y="470" class="text-s-missing">DoclingDocument output: structured page elements with bbox per token</text>
+  <text x="1140" y="486" class="text-s-missing">consumed via rn.from_docling(doc, orgnr=, year=) — adapter exists</text>
+  <text x="1140" y="510" class="text-missing">design doc complete: registrum-cascade-ocr-plugin spec</text>
+  <text x="1140" y="528" class="text-s-missing">reference: github.com/docling-project/docling</text>
+  <text x="1140" y="566" class="text-missing">STATUS: adapter rn.from_docling shipped (works on a DoclingDocument)</text>
+  <text x="1140" y="582" class="text-missing">NOT BUILT: the docling-cascade-ocr plugin itself</text>
+
+  <!-- ═════════════ STAGE 3 · STRUCTURED EXTRACTION ═════════════ -->
+  <text x="40" y="630" class="lane-label">③ structured extraction · gemini json → tidy CSVs (built but with limits)</text>
+
+  <rect class="panel-ext" x="40" y="650" width="780" height="170" rx="6"/>
+  <text x="60" y="674" class="stage-num">noter-extraction-tidy-tables · 15 build_tables</text>
+  <text x="60" y="696" class="title-s">repo: noter-extraction-tidy-tables · skill present in /mnt/skills/user/</text>
+  <line x1="60" y1="708" x2="800" y2="708" class="divider"/>
+  <text x="60" y="728" class="text">manual hand-coding workflow: read JSON · code build_tables.py · emit one CSV per (table, orgnr)</text>
+  <text x="60" y="744" class="text-s">tables: skatt_aaret · egenkapital_summary · lonn_ytelser · garantier · aksjekapital_struktur · ...</text>
+  <text x="60" y="762" class="gcs">→ gs://sondre_brreg_data/raw/noter_extraction_2025/structured/{table}/{orgnr}.csv</text>
+  <text x="60" y="784" class="text-num">15 tables × 152 rows for orgnr 811722332/2024 — validated end-to-end</text>
+  <text x="60" y="802" class="text-amber">scale: each orgnr requires hand-coding · slow · per-firm not population-scale</text>
+
+  <rect class="panel-partial" x="840" y="650" width="800" height="170" rx="6"/>
+  <text x="860" y="674" class="stage-num">noter-parser · auto deterministic cascade (PARTIAL)</text>
+  <text x="860" y="696" class="title-s">repos: noter-text-extraction + noter-parser</text>
+  <line x1="860" y1="708" x2="1620" y2="708" class="divider"/>
+  <text x="860" y="728" class="text">Tier 0: regex · Tier 1: rapidfuzz WRatio≥95 · Tier 2: BGE-M3 cosine≥0.78 · Tier 3: LLM router (Haiku 4.5 opt-in)</text>
+  <text x="860" y="746" class="text-s">Pandera-style identity validators: aksjekap+innskutt+opptjent ≈ sum_egenkapital · etc</text>
+  <text x="860" y="764" class="text-s">canonical schema in canonical_schema.py · 14 tidy tables target</text>
+  <text x="860" y="784" class="text-amber">STATUS: built but not yet population-run · ~6–12 h on Colab Pro for 12,860 firms</text>
+  <text x="860" y="802" class="text-amber">replaces hand-coding workflow when validated; not yet in production cron</text>
+
+  <!-- ═════════════ STAGE 4 · TAXONOMY ═════════════ -->
+  <text x="40" y="858" class="lane-label">④ taxonomy · regnskapnoter-taxonomy v1.0.2 (built)</text>
+
+  <rect class="panel-input" x="40" y="878" width="780" height="140" rx="6"/>
+  <text x="60" y="902" class="stage-num">regnskapnoter-taxonomy v1.0.2</text>
+  <text x="60" y="922" class="title-s">authoritative concept dictionary · CC-BY-4.0</text>
+  <line x1="60" y1="934" x2="800" y2="934" class="divider"/>
+  <text x="60" y="954" class="gcs">gs://regnskapnoter-taxonomy/latest/</text>
+  <text x="60" y="972" class="text-num">279 concepts · 100% definition coverage · 4159 RDF triples</text>
+  <text x="60" y="988" class="text">230 build_tables column→concept_id mappings · 4 axes / 31 members · calc arcs</text>
+  <text x="60" y="1006" class="text-s">consumed by canonicalize() → long (orgnr, year, concept_id, value)</text>
+
+  <rect class="panel-store" x="840" y="878" width="800" height="140" rx="6"/>
+  <text x="860" y="902" class="stage-num">regnskapnoter-py · canonicalize + build_annotations</text>
+  <text x="860" y="922" class="title-s">repo: regnskapnoter-py @ v0.7.0 · 69 tests · CI green</text>
+  <line x1="860" y1="934" x2="1620" y2="934" class="divider"/>
+  <text x="860" y="954" class="text">canonicalize(df, table=) → long observations · 152 rows from 15 tables for one firm</text>
+  <text x="860" y="972" class="text">build_annotations(doc, observations) → WADM annotations · 194 / 184 matched / 95% rate</text>
+  <text x="860" y="990" class="text">6 input adapters: gemini · text_pages · text_blob · tesseract_tsv · cloud_vision · docling</text>
+  <text x="860" y="1006" class="text-num">universal OCR text input — every cascade voter is a usable input</text>
+
+  <!-- ═════════════ STAGE 5 · ANNOTATION STORE ═════════════ -->
+  <text x="40" y="1058" class="lane-label">⑤ annotation event log · gcs append-only (built)</text>
+
+  <rect class="panel-store" x="40" y="1078" width="1600" height="180" rx="6"/>
+  <text x="60" y="1102" class="stage-num">GCSAnnotationStore · per-(orgnr, year) shard</text>
+  <text x="60" y="1124" class="title-s">gs://sondre_brreg_data/annotations/noter/{orgnr}/{year}/events.parquet</text>
+  <line x1="60" y1="1136" x2="1620" y2="1136" class="divider"/>
+  <text x="60" y="1156" class="text">20 columns · event_id (sha256 dedup) · sequence (0=post · 1+=mutations) · event_type · concept_id ·</text>
+  <text x="60" y="1172" class="text">value · selector_json · match_status · creator · rationale · citation · confidence · created (UTC)</text>
+  <text x="60" y="1192" class="text-num">naive empiricism: every action immutable; current state composed at query time;</text>
+  <text x="60" y="1208" class="text-num">seq=0 'post' row never modified — original auto-extraction view always retrievable.</text>
+  <text x="60" y="1226" class="text-s">live validation orgnr 811722332/2024: 102 post events · idempotency PASS · re-anchor · reclassify · delete · all PASS</text>
+  <text x="60" y="1244" class="text-warn">creator field enables multi-engine voting: query latest event per (annotation_id, creator) for cross-DGP consensus</text>
+
+  <!-- ═════════════ STAGE 6 · LLM ANALYST LOOP ═════════════ -->
+  <text x="40" y="1296" class="lane-label">⑥ llm analyst loop · closes the unmatched gap (built · validated only on small batches)</text>
+
+  <rect class="panel-llm" x="40" y="1316" width="1080" height="190" rx="6"/>
+  <text x="60" y="1340" class="stage-num">examples/llm_analyst.py · gemini 2.5 flash · vertex europe-west1</text>
+  <text x="60" y="1362" class="title-s">deployable as Cloud Run Job + Cloud Scheduler hourly trigger</text>
+  <line x1="60" y1="1374" x2="1100" y2="1374" class="divider"/>
+  <text x="60" y="1394" class="text">for each unmatched annotation: full source PDF + raw JSON + observation context inline to Gemini</text>
+  <text x="60" y="1412" class="text-s">structured output: action ∈ {re-anchor, reclassify, propose-concept, delete} · confidence-gated dispatch</text>
+  <text x="60" y="1428" class="text-s">MIN_CONFIDENCE=0.6 default · sub-threshold decisions stay in queue for next pass</text>
+  <text x="60" y="1446" class="text-s">examples/Dockerfile + examples/deploy.sh ship Cloud Run + Scheduler in one bash invocation</text>
+  <text x="60" y="1466" class="text-amber">STATUS: end-to-end mocked tests pass · live validation only on synthetic single-shard mutations</text>
+  <text x="60" y="1484" class="text-warn">cost watch: full PDF inlined per call · ~$0.001/call · ~40k calls for full corpus → $40 budget</text>
+
+  <!-- Cross-engine voting (NOT BUILT) -->
+  <rect class="panel-missing" x="1140" y="1316" width="500" height="190" rx="6"/>
+  <text x="1160" y="1340" class="stage-num" fill="#666">CROSS-ENGINE VOTING (MISSING)</text>
+  <text x="1160" y="1362" class="title-s-missing">multi-DGP consensus on the event log</text>
+  <line x1="1160" y1="1374" x2="1620" y2="1374" class="divider-mute"/>
+  <text x="1160" y="1394" class="text-missing">For each (annotation_id), aggregate events across creators:</text>
+  <text x="1160" y="1410" class="code-mute">  gemini → match_status=matched, value=1100</text>
+  <text x="1160" y="1424" class="code-mute">  tesseract → match_status=matched, value=1100</text>
+  <text x="1160" y="1438" class="code-mute">  easyocr → match_status=unmatched</text>
+  <text x="1160" y="1456" class="text-missing">Emit consensus row when ≥k engines agree.</text>
+  <text x="1160" y="1474" class="text-missing">Reuses xalign_vote logic from ocr-cascade-eval.</text>
+  <text x="1160" y="1492" class="text-warn">SHIP: ~50 lines on top of GCSAnnotationStore.history()</text>
+
+  <!-- ═════════════ STAGE 7 · DOWNSTREAM ═════════════ -->
+  <text x="40" y="1546" class="lane-label">⑦ downstream consumers · what the annotated data feeds</text>
+
+  <rect class="panel-store" x="40" y="1566" width="520" height="170" rx="6"/>
+  <text x="60" y="1590" class="stage-num">FIRM-DETERIORATION MODEL (BUILT, separate)</text>
+  <text x="60" y="1612" class="title-s">firm-deterioration repo · AUC=0.894 · konkurs classifier</text>
+  <line x1="60" y1="1624" x2="540" y2="1624" class="divider"/>
+  <text x="60" y="1644" class="text">consumes finstat.parquet + structured noter values</text>
+  <text x="60" y="1660" class="text-s">+0.153 AUC gain from organisasjonsform + NACE base rate + log(employees)</text>
+  <text x="60" y="1678" class="text-s">model F (konkurs): AUC 0.986 at exit (not predictive — features contemporaneous)</text>
+  <text x="60" y="1700" class="text-amber">currently consumes Gemini-extracted CSVs · could switch to event-log latest state</text>
+
+  <rect class="panel-missing" x="580" y="1566" width="520" height="170" rx="6"/>
+  <text x="600" y="1590" class="stage-num" fill="#666">XBRL EMITTER (MISSING)</text>
+  <text x="600" y="1612" class="title-s-missing">regnskap-no concepts → XBRL facts</text>
+  <line x1="600" y1="1624" x2="1080" y2="1624" class="divider-mute"/>
+  <text x="600" y="1644" class="text-missing">map (orgnr, year, concept_id, value, axis_members) → XBRL fact</text>
+  <text x="600" y="1660" class="text-s-missing">target: ESEF / SBR-Nordic alignment</text>
+  <text x="600" y="1678" class="text-s-missing">validator: Arelle</text>
+  <text x="600" y="1696" class="text-warn">design doc exists in regnskapsnoter monorepo plan; package not built</text>
+
+  <rect class="panel-missing" x="1120" y="1566" width="520" height="170" rx="6"/>
+  <text x="1140" y="1590" class="stage-num" fill="#666">SHACL VALIDATION (MISSING)</text>
+  <text x="1140" y="1612" class="title-s-missing">regnskapsnoter-shacl · cross-concept identity rules</text>
+  <line x1="1140" y1="1624" x2="1620" y2="1624" class="divider-mute"/>
+  <text x="1140" y="1644" class="text-missing">SHACL shapes encode regnskapsloven identity rules:</text>
+  <text x="1140" y="1660" class="code-mute">  SumEgenkapital = Aksjekapital + Overkurs + AnnenInnskutt + ...</text>
+  <text x="1140" y="1678" class="text-s-missing">tolerance: 0.1% relative or 1 NOK absolute (rounding-grade)</text>
+  <text x="1140" y="1696" class="text-warn">design exists; shapes file would be a few hundred lines</text>
+
+  <!-- ═════════════ DAILY JOB SCHEDULE ═════════════ -->
+  <text x="40" y="1776" class="lane-label">daily job schedule · production cron timeline (existing + missing)</text>
+
+  <rect class="panel" x="40" y="1796" width="1600" height="220" rx="6"/>
+  <text x="60" y="1822" class="title-s">europe/oslo daily execution order</text>
+  <line x1="60" y1="1834" x2="1620" y2="1834" class="divider"/>
+  <text x="60" y="1854" class="code">06:00  kunngjoring-collector       → gs://brreg_scrape/kunngjoring/</text>
+  <text x="60" y="1870" class="code">06:30  brreg-downloader            → gs://publicpannelbrreg/  </text><text x="500" y="1870" class="text-s">[bulk JSON for all enheter]</text>
+  <text x="60" y="1886" class="code">07:00  roller / foretakshendelser  → cdc/changelog/</text>
+  <text x="60" y="1902" class="code">07:15  enheter / underenheter      → parsed/v1/state/{date}.parquet</text>
+  <text x="60" y="1920" class="code">??:??  noter-extraction (gemini)   </text><text x="380" y="1920" class="text-warn">→ raw/noter_extraction_2025/raw/  ← shards 0–1 only · 2–9 paused</text>
+  <text x="60" y="1936" class="code-mute">??:??  noter-extraction (cascade)  </text><text x="380" y="1936" class="text-missing">MISSING: daily OCR cascade run on the same 12k PDFs</text>
+  <text x="60" y="1952" class="code-mute">??:??  noter-parser (auto-cascade) </text><text x="380" y="1952" class="text-missing">MISSING: deterministic Tier-0..3 over the JSONs into structured CSVs</text>
+  <text x="60" y="1968" class="code-mute">??:??  rn push (build_annotations) </text><text x="380" y="1968" class="text-missing">MISSING: Cloud Run Job that loops orgnr/year → posts events to GCS shard</text>
+  <text x="60" y="1984" class="code-mute">??:??  rn-analyst (LLM loop)        </text><text x="380" y="1984" class="text-warn">DESIGNED: examples/deploy.sh ready · not yet deployed</text>
+  <text x="60" y="2000" class="code-mute">??:??  cross-engine voting          </text><text x="380" y="2000" class="text-missing">MISSING: multi-DGP consensus over event log (~50 lines)</text>
+</svg>

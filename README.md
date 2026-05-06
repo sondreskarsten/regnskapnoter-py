@@ -218,6 +218,30 @@ df = rn.build_annotations(doc, observations, source_pdf_uri="gs://...")
 
 When the producer supplies word-level bounding boxes, PDF annotations carry a Media Fragments `xywh=` selector chain — `page=N → xywh=x,y,w,h → TextQuoteSelector` — so viewers can highlight the exact rectangle on the rendered page.
 
+
+
+## Calibrating the LLM analyst
+
+The `MIN_CONFIDENCE` threshold (default 0.6) gates which LLM decisions get appended to the event log. Gemini's self-reported confidence is not a calibrated probability — measure how it maps to actual decision quality before relying on it in production.
+
+A 30-minute reviewer protocol is documented in [examples/calibration/CALIBRATION.md](examples/calibration/CALIBRATION.md). It produces a precision curve per confidence band and a per-action breakdown (e.g. you may find `delete` is unreliable at every confidence level — disable it accordingly).
+
+Quick start:
+
+```bash
+# Stage 1: collect 50 LLM decisions on unmatched annotations (no event-log writes)
+python examples/calibration/calibrate.py sample \
+    --orgnr 811722332 --year 2024 --n 50 \
+    --out gs://sondre_brreg_data/raw/regnskapnoter_calibration/run1.jsonl
+
+# Stage 2 (offline): reviewer fills in ground_truth column = correct | wrong | skip
+
+# Stage 3: print precision table + recommended threshold
+python examples/calibration/calibrate.py score --in run1.labelled.jsonl
+```
+
+Recalibrate when the model version, the system prompt, or the input shape changes.
+
 ## Version pinning
 
 ```python
