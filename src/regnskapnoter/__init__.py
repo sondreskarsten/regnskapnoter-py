@@ -41,6 +41,12 @@ from regnskapnoter.frameworks import (
     frameworks,
     list_frameworks,
 )
+from regnskapnoter.law_loader import (
+    LawDocument,
+    extract_paragraph,
+    fetch_law,
+    fetch_paragraph_text,
+)
 from regnskapnoter.loader import (
     artifact_path,
     available_versions,
@@ -68,6 +74,11 @@ from regnskapnoter.tables import (
     mappings,
     references,
 )
+from regnskapnoter.taxonomy_context import (
+    ConceptContext,
+    format_context_block,
+    load_concept_contexts,
+)
 from regnskapnoter.urn import (
     parse_urn,
     to_gcs_path,
@@ -75,12 +86,14 @@ from regnskapnoter.urn import (
     to_urn,
 )
 
-__version__ = "0.7.1"
+__version__ = "0.8.0"
 
 __all__ = [
     "AnalystSession",
+    "ConceptContext",
     "Document",
     "GCSAnnotationStore",
+    "LawDocument",
     "TextSpan",
     "__version__",
     "annotations_to_jsonld",
@@ -100,6 +113,10 @@ __all__ = [
     "concepts_in_framework",
     "coverage_report",
     "definitions",
+    "extract_paragraph",
+    "fetch_law",
+    "fetch_paragraph_text",
+    "format_context_block",
     "framework_for_concept",
     "frameworks",
     "from_cloud_vision",
@@ -112,6 +129,7 @@ __all__ = [
     "labels",
     "list_frameworks",
     "load",
+    "load_concept_contexts",
     "make_mutation_event",
     "mappings",
     "next_sequence",

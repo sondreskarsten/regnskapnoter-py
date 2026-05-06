@@ -61,12 +61,13 @@ def sample_raw_json():
 
 
 def test_format_user_prompt_includes_pdf_context(llm_analyst, sample_annotation, sample_raw_json):
-    prompt = llm_analyst._format_user_prompt(sample_annotation, sample_raw_json)
+    taxonomy_block = "<taxonomy_context>\n(test)\n</taxonomy_context>"
+    prompt = llm_analyst._format_user_prompt(sample_annotation, sample_raw_json, taxonomy_block)
     assert "regnskap-no:Skattekostnad" in prompt
     assert "[[p:5]]" in prompt
     assert "811722332" in prompt
     assert "2024" in prompt
-    assert "[[p:5]]" in prompt
+    assert "taxonomy_context" in prompt
 
 
 def test_call_gemini_returns_parsed_json(llm_analyst):
