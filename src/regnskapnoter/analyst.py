@@ -69,6 +69,7 @@ class AnalystSession:
     raw_prefix: str = "raw/noter_extraction_2025/raw"
     pdf_bucket: str = "brreg-regnskap"
     creator: str = "llm-analyst"
+    taxonomy_version: str = "latest"
     store: GCSAnnotationStore = field(init=False)
 
     def __post_init__(self) -> None:
@@ -92,7 +93,10 @@ class AnalystSession:
             if target_type_filter
             else annotations
         )
-        events = annotations_to_post_events(df, orgnr=orgnr, year=year, creator=self.creator)
+        events = annotations_to_post_events(
+            df, orgnr=orgnr, year=year, creator=self.creator,
+            taxonomy_version=self.taxonomy_version,
+        )
         return self.store.append_events(events)
 
     # ------------------------------------------------------------------ pull
@@ -191,6 +195,7 @@ class AnalystSession:
             citation=citation,
             confidence=confidence,
             creator=self.creator,
+            taxonomy_version=self.taxonomy_version,
         )
         new_events = pd.DataFrame([event])
         self.store.append_events(new_events)

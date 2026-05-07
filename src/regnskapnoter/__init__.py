@@ -30,7 +30,7 @@ from regnskapnoter.adapters import (
     from_text_pages,
 )
 from regnskapnoter.analyst import AnalystSession, build_annotations_with_urn
-from regnskapnoter.context import ConceptContext, build_observation_context
+from regnskapnoter.context import SingleConceptContext, build_observation_context
 from regnskapnoter.annotations import (
     annotations_to_jsonld,
     build_annotations,
@@ -53,6 +53,7 @@ from regnskapnoter.loader import (
     available_versions,
     clear_cache,
     load,
+    resolve_taxonomy_version,
     set_version,
     version,
 )
@@ -87,7 +88,7 @@ from regnskapnoter.urn import (
     to_urn,
 )
 
-__version__ = "0.8.0"
+__version__ = "0.8.1"
 
 __all__ = [
     "AnalystSession",
@@ -95,6 +96,7 @@ __all__ = [
     "Document",
     "GCSAnnotationStore",
     "LawDocument",
+    "SingleConceptContext",
     "TextSpan",
     "__version__",
     "annotations_to_jsonld",
@@ -106,7 +108,6 @@ __all__ = [
     "build_annotations",
     "build_annotations_with_urn",
     "build_observation_context",
-    "ConceptContext",
     "build_tables_mapping",
     "calc_arcs",
     "canonicalize",
@@ -138,6 +139,7 @@ __all__ = [
     "next_sequence",
     "parse_urn",
     "references",
+    "resolve_taxonomy_version",
     "set_version",
     "to_gcs_path",
     "to_pdf_gcs_path",

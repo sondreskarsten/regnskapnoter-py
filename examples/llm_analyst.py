@@ -16,6 +16,9 @@ Usage:
     # Dry-run: print decisions, don't append events
     python examples/llm_analyst.py --orgnr 811722332 --year 2024 --max 5 --dry-run
 
+    # Pin a specific taxonomy version (recorded in every event row)
+    python examples/llm_analyst.py --orgnr 811722332 --year 2024 --taxonomy-version v1.1.0
+
     # Process all shards needing review
     python examples/llm_analyst.py --all
 
@@ -278,7 +281,11 @@ def _process_one_filing(
                 pass
             if queue_cids:
                 try:
-                    contexts = load_concept_contexts(queue_cids)
+                    contexts = load_concept_contexts(
+                        queue_cids,
+                        version=session.taxonomy_version,
+                        fiscal_year=year,
+                    )
                     taxonomy_block = format_context_block(contexts)
                 except Exception as e:
                     LOG.warning("taxonomy_context_load_failed: %s", e)
@@ -338,9 +345,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--max", type=int, default=50, help="Max annotations to process per shard")
     parser.add_argument("--dry-run", action="store_true", help="Decide but don't append mutations")
+    parser.add_argument(
+        "--taxonomy-version",
+        default=None,
+        help="Pin taxonomy version (default: resolve latest concrete tag)",
+    )
     args = parser.parse_args(argv)
 
-    session = rn.AnalystSession()
+    tax_version = args.taxonomy_version or rn.resolve_taxonomy_version()
+    LOG.info("taxonomy_version=%s", tax_version)
+
+    session = rn.AnalystSession(taxonomy_version=tax_version)
     t0 = time.time()
     total_outcomes: dict[str, int] = {}
 

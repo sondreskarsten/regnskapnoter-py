@@ -7,7 +7,7 @@ import os
 import pytest
 
 from regnskapnoter.context import (
-    ConceptContext,
+    SingleConceptContext,
     _qualify,
     _strip_ns,
     format_context_block,
@@ -25,7 +25,7 @@ def test_strip_ns():
 
 
 def test_format_context_block():
-    ctx = ConceptContext(
+    ctx = SingleConceptContext(
         concept_id="Skattekostnad",
         label="Skattekostnad",
         definition="20. Skattekostnad",
@@ -52,7 +52,7 @@ def test_format_context_block():
 
 
 def test_format_context_block_no_law_text():
-    ctx = ConceptContext(
+    ctx = SingleConceptContext(
         concept_id="Test",
         label=None,
         definition=None,

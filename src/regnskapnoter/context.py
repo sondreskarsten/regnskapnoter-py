@@ -52,7 +52,7 @@ def _load_taxonomy(version: str = "latest") -> dict[str, pd.DataFrame]:
 
 
 @dataclass(frozen=True)
-class ConceptContext:
+class SingleConceptContext:
     concept_id: str
     label: str | None
     definition: str | None
@@ -68,7 +68,7 @@ def build_concept_context(
     fiscal_year: int = 2024,
     taxonomy_version: str = "latest",
     resolve_law_text: bool = True,
-) -> ConceptContext:
+) -> SingleConceptContext:
     qid = _qualify(concept_id)
     tax = _load_taxonomy(taxonomy_version)
     definitions = tax.get("definitions", pd.DataFrame())
@@ -128,7 +128,7 @@ def build_concept_context(
     except Exception:
         pass
 
-    return ConceptContext(
+    return SingleConceptContext(
         concept_id=_strip_ns(qid),
         label=label,
         definition=defn,
@@ -140,7 +140,7 @@ def build_concept_context(
     )
 
 
-def format_context_block(ctx: ConceptContext) -> str:
+def format_context_block(ctx: SingleConceptContext) -> str:
     lines = [f"=== CONCEPT: {ctx.concept_id} ==="]
     if ctx.label:
         lines.append(f"Label: {ctx.label}")

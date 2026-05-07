@@ -29,6 +29,7 @@ Each event row has these columns (one row per action):
     citation           str  (regnskapsloven/NRS citation for propose-concept)
     confidence         float
     creator            'noter-extraction-2025' | 'llm-analyst-{model}' | ...
+    taxonomy_version   taxonomy version used when producing this event (e.g. 'v1.1.0')
     created            ISO 8601 UTC
 
 Current state of an annotation = the LATEST row for its annotation_id where
@@ -73,6 +74,7 @@ EVENT_SCHEMA = pa.schema(
         ("citation", pa.string()),
         ("confidence", pa.float64()),
         ("creator", pa.string()),
+        ("taxonomy_version", pa.string()),
         ("created", pa.timestamp("us", tz="UTC")),
     ]
 )
@@ -256,6 +258,7 @@ def annotations_to_post_events(
     orgnr: str,
     year: int,
     creator: str = "noter-extraction-2025",
+    taxonomy_version: str | None = None,
 ) -> pd.DataFrame:
     """Convert an output of build_annotations() into seq=0 'post' events."""
     if annotations.empty:
@@ -288,6 +291,7 @@ def annotations_to_post_events(
                 "citation": "",
                 "confidence": None,
                 "creator": creator,
+                "taxonomy_version": taxonomy_version,
                 "created": now,
             }
         )
@@ -307,6 +311,7 @@ def make_mutation_event(
     citation: str = "",
     confidence: float | None = None,
     creator: str = "llm-analyst",
+    taxonomy_version: str | None = None,
 ) -> dict[str, Any]:
     """Construct a mutation event row from a current-state base row."""
     annotation_id = base["annotation_id"]
@@ -334,6 +339,7 @@ def make_mutation_event(
         "citation": citation,
         "confidence": confidence,
         "creator": creator,
+        "taxonomy_version": taxonomy_version,
         "created": _now(),
     }
 

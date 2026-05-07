@@ -102,6 +102,20 @@ def load(name: str) -> pd.DataFrame:
     return _load(name, _active_version)
 
 
+def resolve_taxonomy_version(fiscal_year: int | None = None) -> str:
+    """Resolve 'latest' to a concrete version tag for reproducibility.
+
+    If fiscal_year is provided, returns the highest version tag available.
+    The fiscal_year parameter is reserved for future use when taxonomy versions
+    are date-stamped and historical reconstruction becomes possible.
+    Currently: always returns the highest semver tag.
+    """
+    versions = available_versions()
+    if not versions:
+        return "latest"
+    return versions[-1]
+
+
 def clear_cache(version_filter: str | None = None) -> None:
     """Wipe the local cache. Pass a version to wipe only that version."""
     root = _cache_root()
