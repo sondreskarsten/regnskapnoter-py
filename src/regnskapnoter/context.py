@@ -3,7 +3,7 @@
 Given a concept_id, builds a structured context block containing:
   - concept definition (from definitions.parquet)
   - calc-arc neighborhood: parent, children, siblings
-  - legal references with resolved paragraph text from lovdata.no
+  - legal references with resolved paragraph text from the norwegian-laws repository
   - framework membership
 
 This context is injected into the LLM prompt alongside the raw observation,

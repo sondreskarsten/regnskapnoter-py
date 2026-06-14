@@ -2,11 +2,13 @@
 
 Given a set of concept_ids (from annotations), this module loads the relevant
 slices of definitions, calc_arcs, labels, and references from the taxonomy,
-resolves legal references to actual paragraph text from lovdata.no, then
-formats them into a compact text block the LLM can use to ground its decisions.
+resolves legal references to actual paragraph text from the norwegian-laws
+repository, then formats them into a compact text block the LLM can use to
+ground its decisions.
 
-Design: 100% coverage of taxonomy concepts, no upstream dependency (law text
-comes directly from lovdata.no, not from the norwegian-laws repo).
+Design: 100% coverage of taxonomy concepts. Law text is read from the
+norwegian-laws repository (consolidated markdown), which covers nested
+sub-chapters such as regnskapsloven kapittel 7.
 """
 
 from __future__ import annotations
