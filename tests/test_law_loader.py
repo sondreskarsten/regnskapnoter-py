@@ -1,4 +1,4 @@
-"""Tests for regnskapnoter.law_loader (lovdata.no scraper)."""
+"""Tests for regnskapnoter.law_loader (norwegian-laws markdown reader)."""
 
 from __future__ import annotations
 
@@ -35,35 +35,21 @@ def test_normalize_paragraph_id():
     assert _normalize_paragraph_id("§ 3-5") == "3-5"
 
 
-MOCK_HTML = """
-<div data-id="PARAGRAF_3-5" class="morTag_p paragraf" id="PARAGRAF_3-5">
-<h4 class="paragrafHeader"><span class="paragrafhode">
-<span class="paragrafValue">§ 3-5.</span>
-<span class="paragrafTittel"><em>Signering av årsregnskapet</em></span>
-</span></h4>
-<table data-id="AVSNITT_1" class="numeral morTag_an avsnitt" style="width:100%">
-<tr><td><span class="avsnittNummer numeral">(1)</span> Foo bar baz.</td></tr>
-</table>
-<table data-id="AVSNITT_2" class="numeral morTag_an avsnitt" style="width:100%">
-<tr><td><span class="avsnittNummer numeral">(2)</span> Second paragraph.</td></tr>
-</table>
-</div>
-<a class="documentPart_scrollMargin" name="§3-6"></a>
-<div data-id="PARAGRAF_3-6" class="morTag_p paragraf" id="PARAGRAF_3-6">
-<h4 class="paragrafHeader"><span class="paragrafhode">
-<span class="paragrafValue">§ 3-6.</span>
-<span class="paragrafTittel"><em>Konsernregnskap</em></span>
-</span></h4>
-<table data-id="AVSNITT_1" class="numeral morTag_an avsnitt" style="width:100%">
-<tr><td><span class="avsnittNummer numeral">(1)</span> Some text.</td></tr>
-</table>
-</div>
-<a class="share-paragraf" href="#"></a>
+MOCK_MD = """\
+#### § 3-5. Signering av årsregnskapet
+
+(1) Foo bar baz.
+
+(2) Second paragraph.
+
+#### § 3-6. Konsernregnskap
+
+(1) Some text.
 """
 
 
-def test_extract_paragraph_from_html():
-    law = LawDocument(law_id="test", html=MOCK_HTML, sist_endret=None)
+def test_extract_paragraph_from_markdown():
+    law = LawDocument(law_id="test", markdown=MOCK_MD, sist_endret=None)
     result = extract_paragraph(law, "§ 3-5")
     assert result is not None
     assert "Signering" in result
@@ -72,12 +58,12 @@ def test_extract_paragraph_from_html():
 
 
 def test_extract_paragraph_not_found():
-    law = LawDocument(law_id="test", html=MOCK_HTML, sist_endret=None)
+    law = LawDocument(law_id="test", markdown=MOCK_MD, sist_endret=None)
     assert extract_paragraph(law, "§ 99-99") is None
 
 
 def test_extract_subparagraph():
-    law = LawDocument(law_id="test", html=MOCK_HTML, sist_endret=None)
+    law = LawDocument(law_id="test", markdown=MOCK_MD, sist_endret=None)
     result = extract_paragraph(law, "§ 3-5 (2)")
     assert result is not None
     assert "Second paragraph" in result
@@ -103,7 +89,7 @@ def test_fetch_law_live():
         try:
             law = fetch_law("regnskapsloven")
             assert law.law_id == "lov/1998-07-17-56"
-            assert len(law.html) > 100000
+            assert len(law.markdown) > 100000
             p = extract_paragraph(law, "§ 7-29")
             assert p is not None
             assert "Andre forpliktelser" in p

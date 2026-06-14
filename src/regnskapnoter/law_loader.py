@@ -1,16 +1,17 @@
-"""Time-aware fetcher for Norwegian law text from lovdata.no.
+"""Fetcher for Norwegian law text from the norwegian-laws repository.
 
-Scrapes individual paragraphs directly from the Lovdata website, which has
-100% coverage of all paragraphs (unlike the norwegian-laws repo's bulk XML
-parser which misses nested sub-chapters like regnskapsloven kapittel 7).
+Reads consolidated law markdown published at
+https://github.com/sondreskarsten/norwegian-laws (raw ``lover/{law_id}.md``),
+whose parser now has full coverage of nested sub-chapters such as
+regnskapsloven kapittel 7. There is no lovdata.no scraping and no fallback:
+if the law markdown cannot be fetched, this module fails loud.
 
-Disk-caches fetched law HTML by (law_id, year) under
+Disk-caches fetched law markdown by ``law_id`` under
 $XDG_CACHE_HOME/regnskapnoter/laws/.
 
 Naive empiricism note: the caller must specify a fiscal year. The returned
-text is the *current* consolidated version from lovdata.no — there is no
-PIT reconstruction yet. The ``sist_endret`` field records when the law was
-last amended so the caller can detect staleness.
+text is the *current* consolidated version published by norwegian-laws —
+there is no PIT reconstruction yet.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ LAW_IDS = {
     "OTP-loven": "lov/2005-12-21-124",
 }
 
-LOVDATA_BASE = "https://lovdata.no/dokument/NL"
+NL_RAW_BASE = "https://raw.githubusercontent.com/sondreskarsten/norwegian-laws/main/lover"
 
 
 def cache_dir() -> Path:
@@ -64,37 +65,34 @@ def resolve_law_id(name_or_id: str) -> str:
 @dataclass(frozen=True)
 class LawDocument:
     law_id: str
-    html: str
+    markdown: str
     sist_endret: str | None
 
 
-def _fetch_law_html(law_id: str) -> str:
-    url = f"{LOVDATA_BASE}/{law_id}"
-    req = urllib.request.Request(url, headers={"User-Agent": "regnskapnoter-py/0.8"})
+def _fetch_law_markdown(law_id: str) -> str:
+    url = f"{NL_RAW_BASE}/{law_id.replace('/', '-')}.md"
+    req = urllib.request.Request(url, headers={"User-Agent": "regnskapnoter-py/0.9"})
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return resp.read().decode("utf-8")
     except urllib.error.HTTPError as e:
-        raise FileNotFoundError(f"{law_id} not found (status={e.code})") from e
+        raise FileNotFoundError(
+            f"{law_id} not found in norwegian-laws (status={e.code})"
+        ) from e
 
 
 def fetch_law(name_or_id: str) -> LawDocument:
     law_id = resolve_law_id(name_or_id)
     safe_name = law_id.replace("/", "-")
-    cache_path = cache_dir() / f"{safe_name}.html"
+    cache_path = cache_dir() / f"{safe_name}.md"
     if cache_path.is_file():
-        html = cache_path.read_text(encoding="utf-8")
+        markdown = cache_path.read_text(encoding="utf-8")
     else:
-        html = _fetch_law_html(law_id)
+        markdown = _fetch_law_markdown(law_id)
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(html, encoding="utf-8")
+        cache_path.write_text(markdown, encoding="utf-8")
 
-    sist_endret = None
-    m = re.search(r'id="metaField_endret"[^>]*>.*?href="[^"]*">([^<]+)</a>', html)
-    if m:
-        sist_endret = m.group(1).strip()
-
-    return LawDocument(law_id=law_id, html=html, sist_endret=sist_endret)
+    return LawDocument(law_id=law_id, markdown=markdown, sist_endret=None)
 
 
 _PARA_ID_RE = re.compile(r"§\s*(\d+(?:-\d+[a-z]?))")
@@ -108,31 +106,26 @@ def _normalize_paragraph_id(s: str) -> str:
 
 def extract_paragraph(law: LawDocument, citation: str) -> str | None:
     target = _normalize_paragraph_id(citation)
-    text = _extract_by_anchor(law, target, citation)
+    text = _extract_by_heading(law, target, citation)
     if text:
         return text
     # Fallback: sub-item refs like "6-2 A III 7" → try parent "6-2"
     parent = re.match(r"^(\d+-\d+[a-z]?)", target)
     if parent and parent.group(1) != target:
-        parent_text = _extract_by_anchor(law, parent.group(1), citation)
+        parent_text = _extract_by_heading(law, parent.group(1), citation)
         if parent_text:
             return f"[context: full § {parent.group(1)}, relevant sub-item: {citation}]\n\n{parent_text}"
     return None
 
 
-def _extract_by_anchor(law: LawDocument, target: str, citation: str) -> str | None:
-    anchor_id = f"PARAGRAF_{target}"
-    pattern = re.compile(
-        rf'<div[^>]*data-id="{re.escape(anchor_id)}"[^>]*class="morTag_p paragraf"[^>]*>(.*?)</div>\s*(?=<a\s+class="(?:documentPart_scrollMargin|namedAnchor|share-paragraf)"|<div\s+data-(?:id|level)=|</div>)',
-        re.DOTALL,
-    )
-    m = pattern.search(law.html)
+def _extract_by_heading(law: LawDocument, target: str, citation: str) -> str | None:
+    start = re.compile(rf"^#+[ \t]+§[ \t]+{re.escape(target)}\.", re.MULTILINE)
+    m = start.search(law.markdown)
     if not m:
         return None
-
-    raw = m.group(0)
-    text = _html_to_text(raw)
-    if not text.strip():
+    nxt = re.compile(r"^#+[ \t]+§[ \t]", re.MULTILINE).search(law.markdown, m.end())
+    text = law.markdown[m.start() : nxt.start() if nxt else len(law.markdown)].strip()
+    if not text:
         return None
 
     sub = _extract_subparagraph_num(citation)
@@ -142,28 +135,6 @@ def _extract_by_anchor(law: LawDocument, target: str, citation: str) -> str | No
             return f"§ {target} ({sub})\n\n{sub_text}"
 
     return text
-
-
-def _html_to_text(html: str) -> str:
-    text = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL)
-    text = re.sub(
-        r'<[^>]*class="[^"]*fotnote[^"]*"[^>]*>.*?(?:</td>|</tr>|</table>)',
-        "",
-        text,
-        flags=re.DOTALL,
-    )
-    text = re.sub(r'<a[^>]*class="share-paragraf"[^>]*>.*?</a>', "", text, flags=re.DOTALL)
-    text = re.sub(r'<a[^>]*class="namedAnchor"[^>]*></a>', "", text)
-    text = re.sub(r"<br\s*/?>", "\n", text)
-    text = re.sub(r"</(?:tr|table|p|div|h[1-6])>", "\n", text)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    import html as html_mod
-
-    text = html_mod.unescape(text)
-    lines = [ln.strip() for ln in text.splitlines()]
-    return "\n".join(ln for ln in lines if ln)
 
 
 _SUBPARA_RE = re.compile(r"\((\d+)\)")
@@ -193,19 +164,10 @@ def fetch_paragraph_text(
 ) -> tuple[str | None, str | None]:
     if publisher != "Stortinget":
         return None, None
-    try:
-        law = fetch_law(document)
-    except (ValueError, FileNotFoundError):
-        return None, None
+    law = fetch_law(document)
     text = extract_paragraph(law, paragraph)
-    source = f"lovdata.no/{law.law_id}" if text else None
+    source = f"norwegian-laws/{law.law_id}" if text else None
     return text, source
-
-
-def _chapter_for_paragraph(para: str) -> str | None:
-    """Infer chapter from paragraph number, e.g. '14-6' → 'KAPITTEL_14'."""
-    m = re.match(r"(\d+)-", _normalize_paragraph_id(para))
-    return f"KAPITTEL_{m.group(1)}" if m else None
 
 
 def fetch_paragraph_text_with_chapter_fallback(
@@ -214,36 +176,9 @@ def fetch_paragraph_text_with_chapter_fallback(
     paragraph: str,
     fiscal_year: int,
 ) -> tuple[str | None, str | None]:
-    """Like fetch_paragraph_text but tries chapter-specific URL for paginated laws."""
-    text, source = fetch_paragraph_text(publisher, document, paragraph, fiscal_year)
-    if text:
-        return text, source
-    if publisher != "Stortinget":
-        return None, None
-    try:
-        law_id = resolve_law_id(document)
-    except ValueError:
-        return None, None
-    chapter = _chapter_for_paragraph(paragraph)
-    if not chapter:
-        return None, None
-    chapter_url_id = f"{law_id}/{chapter}"
-    safe_name = chapter_url_id.replace("/", "-")
-    cache_path = cache_dir() / f"{safe_name}.html"
-    if cache_path.is_file():
-        html = cache_path.read_text(encoding="utf-8")
-    else:
-        url = f"{LOVDATA_BASE}/{chapter_url_id}"
-        req = urllib.request.Request(url, headers={"User-Agent": "regnskapnoter-py/0.8"})
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                html = resp.read().decode("utf-8")
-        except urllib.error.HTTPError:
-            return None, None
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(html, encoding="utf-8")
+    """Resolve paragraph text from norwegian-laws.
 
-    chapter_law = LawDocument(law_id=law_id, html=html, sist_endret=None)
-    text = extract_paragraph(chapter_law, paragraph)
-    source = f"lovdata.no/{chapter_url_id}" if text else None
-    return text, source
+    The whole law is a single markdown document, so there is no chapter
+    pagination to work around; this delegates to ``fetch_paragraph_text``.
+    """
+    return fetch_paragraph_text(publisher, document, paragraph, fiscal_year)
